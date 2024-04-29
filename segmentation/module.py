@@ -19,6 +19,8 @@ from segmentation.dataset import resize_label
 from settings import log
 from train_and_test import warm_only, joint, last_only
 
+import mlflow
+
 
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
@@ -295,6 +297,9 @@ class PatchClassificationModule(LightningModule):
             log(f'Saving best model, accuracy: ' + str(val_acc))
             self.best_acc = val_acc
             torch.save(obj=self.ppnet, f=os.path.join(self.checkpoints_dir, f'{stage_key}_best.pth'))
+            mlflow.log_metric('val_accuracy', val_acc)
+            print('logging model ', type(self.ppnet))
+            mlflow.pytorch.log_model(self.ppnet, str(stage_key)+'_best')
 
     def _epoch_end(self, split_key: str):
         metrics = self.metrics[split_key]

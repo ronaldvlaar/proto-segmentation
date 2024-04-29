@@ -30,6 +30,8 @@ from deeplab_features import torchvision_resnet_weight_key_to_deeplab2
 
 Trainer = gin.external_configurable(Trainer)
 
+import mlflow
+mlflow.set_tracking_uri("/home/rvlaar/.mlflow")
 
 @gin.configurable(denylist=['config_path', 'experiment_name', 'neptune_experiment', 'pruned'])
 def train(
@@ -49,6 +51,7 @@ def train(
 ):
     seed_everything(random_seed)
 
+    mlflow.set_experiment(experiment_name+'_pruned_'+str(int(pruned)))
     results_dir = os.path.join(os.environ['RESULTS_DIR'], experiment_name)
     os.makedirs(results_dir, exist_ok=True)
     log(f'Starting experiment in "{results_dir}" from config {config_path}')
@@ -191,6 +194,7 @@ def train(
 
         torch.save(obj=ppnet, f=os.path.join(results_dir, f'checkpoints/push_last.pth'))
         torch.save(obj=ppnet, f=os.path.join(results_dir, f'checkpoints/push_best.pth'))
+        mlflow.pytorch.log_model(ppnet, 'train_push_best')
 
         ppnet = torch.load(os.path.join(results_dir, f'checkpoints/push_last.pth'))
         ppnet = ppnet.cuda()

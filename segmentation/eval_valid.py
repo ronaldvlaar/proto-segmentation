@@ -9,13 +9,16 @@ import numpy as np
 import torch
 from torch.nn import functional as F
 from torchvision import transforms
+from PIL import Image
 
 from segmentation import train
 from tqdm import tqdm
 from segmentation.dataset import resize_label
 from segmentation.constants import CITYSCAPES_CATEGORIES, CITYSCAPES_19_EVAL_CATEGORIES, \
-    PASCAL_CATEGORIES, PASCAL_ID_MAPPING
+    PASCAL_CATEGORIES, PASCAL_ID_MAPPING, CITYSCAPES_ID_2_LABEL
 from settings import data_path, log
+
+import mlflow
 
 
 def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pascal: bool = False,
@@ -50,6 +53,17 @@ def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pa
 
     ID_MAPPING = PASCAL_ID_MAPPING if pascal else CITYSCAPES_19_EVAL_CATEGORIES
     CATEGORIES = PASCAL_CATEGORIES if pascal else CITYSCAPES_CATEGORIES
+
+    ID_MAPPING = PASCAL_ID_MAPPING if pascal else CITYSCAPES_19_EVAL_CATEGORIES
+
+    OUR_ID_2_SOURCE_ID = {v: k for k, v in ID_MAPPING.items()}
+    if not pascal:
+        OUR_ID_2_SOURCE_ID[0] = 0
+
+        rev_origin = {v: k for k, v in CITYSCAPES_ID_2_LABEL.items()}
+
+        OUR_ID_2_SOURCE_ID = {k: rev_origin[CITYSCAPES_CATEGORIES[v]] for k, v in OUR_ID_2_SOURCE_ID.items()}
+    OUR_ID_2_SOURCE_ID = np.vectorize(OUR_ID_2_SOURCE_ID.get)
 
     pred2name = {k - 1: i for i, k in ID_MAPPING.items() if k > 0}
     if pascal:
@@ -187,6 +201,17 @@ def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pa
 
                     CLS_I[cls_i] += np.sum(pr & gt)
                     CLS_U[cls_i] += np.sum((pr | gt) & (ann != 0))  # ignore pixels where ground truth is void
+
+                sample_miou = CLS_I[cls_i]*100/CLS_U[cls_i]
+                  # 0 is 'void'
+                pred_sample = pred + 1
+                pred_sample = OUR_ID_2_SOURCE_ID(pred_sample)
+                pred_img = Image.fromarray(np.uint8(pred_sample))
+                img_id = batch_img_files[sample_i].split('.')[0]
+                pred_img = pred_img.convert("L")
+                mlflow.log_figure(pred_img, str(sample_miou)+'_'+str(img_id)+'.png')
+                
+                #.save(os.path.join(RESULTS_DIR, f'{img_id}.png'))
 
                 # calculate statistics of prototypes occurrences as nearest
                 nearest_proto_cls = PROTO2CLS(nearest_proto)

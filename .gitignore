@@ -1,6 +1,8 @@
 # .gitignore for python
 # source: https://github.com/github/gitignore/blob/main/Python.gitignore
 
+*.sh
+/tb_csv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
