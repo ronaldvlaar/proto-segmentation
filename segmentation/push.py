@@ -451,7 +451,7 @@ def update_prototypes_on_image(dataset: PatchClassificationDataset,
                                              prototype_img_filename_prefix + f'_{j}-original_with_self_act_and_box.png'))
                     plt.close()
 
-                    if img_y.ndim > 2:
+                    if img_y.ndim > 1:
                         plt.imsave(os.path.join(dir_for_saving_prototypes_cls,
                                                 prototype_img_filename_prefix + f'_{j}-receptive_field.png'),
                                    rf_img_j,

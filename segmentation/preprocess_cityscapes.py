@@ -68,6 +68,11 @@ def process_images_in_chunks(args):
         output_img_path = os.path.join(MARGIN_IMG_DIR, split_key, img_id + '.png')
         img_with_margin.save(output_img_path)
 
+    # Save image as .npy for fast loading
+    pix = np.array(img_with_margin).astype(np.uint8)
+    # pix.shape = (height, width, channels)
+    np.save(os.path.join(MARGIN_IMG_DIR, split_key, img_id), pix)
+
     return chunk_img_ids
 
 
@@ -155,4 +160,6 @@ def preprocess_cityscapes_obj_masks(n_jobs: int, chunk_size: int = 10):
 
 
 if __name__ == '__main__':
-    argh.dispatch_commands([preprocess_cityscapes, preprocess_cityscapes_obj_masks])
+    # argh.dispatch_commands([preprocess_cityscapes, preprocess_cityscapes_obj_masks])
+    argh.dispatch_command(preprocess_cityscapes)
+    argh.dispatch_command(preprocess_cityscapes_obj_masks)

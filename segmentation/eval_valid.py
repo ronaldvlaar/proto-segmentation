@@ -5,6 +5,8 @@ from collections import Counter
 import argh
 import gin
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+from matplotlib.colors import ListedColormap
 import numpy as np
 import torch
 from torch.nn import functional as F
@@ -19,10 +21,15 @@ from segmentation.constants import CITYSCAPES_CATEGORIES, CITYSCAPES_19_EVAL_CAT
 from settings import data_path, log
 
 import mlflow
+mlflow.set_tracking_uri("/home/rvlaar/.mlflow")
 
 
 def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pascal: bool = False,
                    margin: int = 0):
+    # experiment_name = model_name+'_pruned_'
+    # experiment_name += '0' if training_phase != 'pruned' else '1' 
+    mlflow.set_experiment(model_name+'_'+training_phase)
+    print(model_name, training_phase)
     model_path = os.path.join(os.environ['RESULTS_DIR'], model_name)
     config_path = os.path.join(model_path, 'config.gin')
     gin.parse_config_file(config_path)
@@ -94,6 +101,9 @@ def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pa
 
     all_cls_distances = []
 
+    class_cmap = plt.cm.get_cmap('viridis', len(pred2name)+1)
+    class_cmap = class_cmap(np.linspace(0, 1, len(pred2name)+1))
+    class_cmap = ListedColormap(class_cmap)
     with torch.no_grad():
         for cls_i in range(ppnet.num_classes):
             cls_proto_ind = (proto_ident[:, cls_i] == 1).nonzero()[0]
@@ -142,7 +152,15 @@ def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pa
 
     correct_pixels, total_pixels = 0, 0
 
+    os.makedirs(os.path.join(RESULTS_DIR, 'ranked'), exist_ok=True)
+    np.seterr(divide='ignore', invalid='ignore')
+
     with torch.no_grad():
+        # mingt = 30
+        # maxgt = 0
+
+        # minpr = 30
+        # maxpr = 0
         for batch_img_files in tqdm(batched_img_files, desc='evaluating'):
             img_tensors = []
             anns = []
@@ -193,25 +211,88 @@ def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pa
                 #  (2,1024,2048) (2,2048,1024)
                 total_pixels += np.sum(ann != 0)
 
+                clsi = []
+                clsu = []
+
+                pred_ratio = []
+                gt_ratio = []
+
                 for cls_i in range(ppnet.num_classes):
                     pr = pred == cls_i
                     gt = ann == cls_i + 1
+                    clsi.append(np.sum(pr & gt))
+                    clsu.append(np.sum((pr | gt) & (ann != 0)))
 
-                    # ValueError: operands could not be broadcast together with shapes (2,1024,2048) (2,2048,1024)
+                    pred_ratio.append(np.sum(pr))
+                    gt_ratio.append(np.sum(gt))
 
                     CLS_I[cls_i] += np.sum(pr & gt)
                     CLS_U[cls_i] += np.sum((pr | gt) & (ann != 0))  # ignore pixels where ground truth is void
 
-                sample_miou = CLS_I[cls_i]*100/CLS_U[cls_i]
-                  # 0 is 'void'
-                pred_sample = pred + 1
-                pred_sample = OUR_ID_2_SOURCE_ID(pred_sample)
-                pred_img = Image.fromarray(np.uint8(pred_sample))
+                ciou = np.nan_to_num(np.array(clsi)/np.array(clsu), nan=0.0)
+                class_iou = dict(zip(list(pred2name.values()), ciou))
+                sample_miou = sum(clsi)*100/sum(clsu)
+
+                pred_ratio = np.array(pred_ratio)/sum(pred_ratio)
+                gt_ratio = np.array(gt_ratio)/sum(gt_ratio)
+
                 img_id = batch_img_files[sample_i].split('.')[0]
-                pred_img = pred_img.convert("L")
-                mlflow.log_figure(pred_img, str(sample_miou)+'_'+str(img_id)+'.png')
+
+                fig, (ax1, ax2, ax3, ax4) = plt.subplots(1, 4, figsize=(20, 5))
+                fig.suptitle('Image ' + str(img_id), fontsize=16, fontweight='bold')
+
+                ind = np.array(range(len(list(class_iou.keys()))))
+                bar_width = 0.3
+                ax4.set_xticks(ind + bar_width / 2, list(class_iou.keys()), rotation=70)
+                ax4.bar(ind, pred_ratio, width=bar_width, color='skyblue')
+                ax4.bar(ind+bar_width, gt_ratio, width=bar_width, color='orange')
+                ax4.set_title('Class ratio')
+                ax4.set_xlabel('class')
+                ax4.set_ylabel('ratio')
+                ax4.legend(['pred', ' gt'])
+
+                ax3.set_xticks(range(len(list(class_iou.keys()))), list(class_iou.keys()), rotation=70)
+                ax3.bar(list(class_iou.keys()), list(class_iou.values()), color='skyblue')
+                ax3.set_title('Sample IoU per gt class')
+                ax3.set_xlabel('class')
+                ax3.set_ylabel('IoU')
+
+                nothing = np.ones((ann.shape[0], ann.shape[1]))
+                ax1.imshow(nothing, cmap=cm.gray)
+                masked_ann = np.ma.masked_where(ann < 1, ann)
+                im1 = ax1.imshow(masked_ann, cmap=class_cmap, vmin=0, vmax=len(pred2name)+1)
+                ax1.set_title('Ground truth' + str(np.unique(masked_ann)))
                 
-                #.save(os.path.join(RESULTS_DIR, f'{img_id}.png'))
+                im2 = ax2.imshow(pred+1, cmap=class_cmap, vmin=0, vmax=len(pred2name)+1)
+                ax2.set_title('Predicted'+str(np.unique(pred+1)))
+
+                # fig.colorbar(im1, ax=ax1)
+                # fig.colorbar(im2, ax=ax2)
+
+                # if np.min(masked_ann) < mingt:
+                #     mingt = np.min(masked_ann)
+                #     print('mingt ', mingt)
+
+                # if np.max(masked_ann) > maxgt:
+                #     maxgt = np.max(masked_ann)
+                #     print('maxgt ', maxgt)
+
+                # if np.min(pred+1) < minpr:
+                #     minpr = np.min(pred+1)
+                #     print('minpr ', minpr)
+
+                # if np.max(pred+1) > maxpr:
+                #     maxpr = np.max(pred+1)
+                #     print('maxpr ', maxpr)
+                
+                plt.tight_layout()
+                plt.show()
+               
+                ranked_path = os.path.join(RESULTS_DIR, 'ranked')
+                ranked_path = os.path.join(ranked_path, str(sample_miou)+'_'+str(img_id)+'.png')
+                plt.savefig(ranked_path)
+
+                plt.clf()
 
                 # calculate statistics of prototypes occurrences as nearest
                 nearest_proto_cls = PROTO2CLS(nearest_proto)
