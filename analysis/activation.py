@@ -22,7 +22,7 @@ from segmentation import train
 from tqdm import tqdm
 from segmentation.dataset import resize_label
 from segmentation.constants import CITYSCAPES_CATEGORIES, CITYSCAPES_19_EVAL_CATEGORIES, \
-    PASCAL_CATEGORIES, PASCAL_ID_MAPPING, CITYSCAPES_ID_2_LABEL
+    PASCAL_CATEGORIES, PASCAL_ID_MAPPING, CITYSCAPES_MEAN, CITYSCAPES_STD
 from settings import data_path, log
 
 from find_nearest import to_normalized_tensor
@@ -112,8 +112,11 @@ def make_act_map_plots(img: Image,
 
             overlayed_original_img_j = 0.5 * original_img_j + 0.3 * heatmap
 
-            # Receptive field of the prototype processed by ResNet
+            # Receptive field of the prototype processed by backbone. The coordinates correspond (see push.py)
+            # and can be used to obtain the patch in the original image. Alternatively, the inverse of the backbone can be used
+            # to obain the original patch from the feature map patch
             proto_rf = protos[j].cpu().reshape((8,8))
+            # Invert resnet transform *std+mean
             axs[0][col_idx].imshow(overlayed_original_img_j)
             axs[1][col_idx].imshow(proto_rf)
             axs[1][col_idx].set_title('original_proto_idx'+str(proto_m[j]))\
@@ -217,7 +220,6 @@ def run_analysis(model_name: str, training_phase: str, batch_size: int = 2, pasc
         im_title = img_path.split('/')[-1].replace('.png', '')
 
         print(im_title)
-        print(model_path, 'mp')
         with torch.no_grad():
             make_act_map_plots(img, ppnet, RESULTS_DIR, cls2protos, cls2name, proto_m, im_title, model_path,
                                        prototype_activation_function_in_numpy=log)
