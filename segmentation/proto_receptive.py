@@ -1,9 +1,7 @@
 """
-Training prototype segmentation model on Cityscapes or SUN dataset
-
 Example run:
 
-python -m segmentation.train cityscapes 2022_03_26_cityscapes
+python -m segmentation.proto_receptive pascal_kld_imnet temp
 """
 import os
 import shutil
@@ -102,5 +100,3 @@ def load_config_and_train(
 
 if __name__ == '__main__':
     argh.dispatch_command(load_config_and_train)
-
-
