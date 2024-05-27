@@ -70,6 +70,12 @@ class GaussianSoftMaxCriterion(nn.Module):
 
         return class_separability.detach().numpy()
     
+    def get_mu(self):
+        return self.mu.cpu().detach().numpy()
+    
+    def get_sigma(self):
+        return self.sigma.cpu().detach().numpy()
+    
 
 if __name__ == '__main__':
     model = GaussianSoftMaxCriterion(20)

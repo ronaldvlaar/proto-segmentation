@@ -20,7 +20,11 @@ from segmentation.dataset import resize_label
 from settings import log
 from train_and_test import warm_only, joint, last_only
 
-import mlflow
+from segmentation.constants import CITYSCAPES_CATEGORIES, CITYSCAPES_19_EVAL_CATEGORIES, \
+    PASCAL_CATEGORIES, PASCAL_ID_MAPPING
+
+# import mlflow
+import wandb
 
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
@@ -37,6 +41,7 @@ def reset_metrics() -> Dict:
         'loss': 0
     }
 
+
 def log_json(data, path):
     if os.path.isfile(path):
         with open(path, 'r') as json_file:
@@ -46,6 +51,33 @@ def log_json(data, path):
     current.append(data)
     with open(path, 'w') as json_file:
         json.dump(current, json_file, indent=4)
+
+
+def flatten_dict(d, cls2name):
+    flattened_dict = {}
+    for k, v in d.items():
+        if isinstance(v, list):
+            for index, item in enumerate(v):
+                new_key = f"{k}_{index}" if len(cls2name) == 0 else f"{k}_{cls2name[index]}"
+                flattened_dict[new_key] = item
+        else:
+            flattened_dict[k] = v
+
+    return flattened_dict
+
+
+def get_cls2name(pascal):
+    ID_MAPPING = PASCAL_ID_MAPPING if pascal else CITYSCAPES_19_EVAL_CATEGORIES
+    CATEGORIES = PASCAL_CATEGORIES if pascal else CITYSCAPES_CATEGORIES
+
+    cls2name = {k - 1: i for i, k in ID_MAPPING.items() if k > 0}
+    if pascal:
+        cls2name = {i: CATEGORIES[k + 1] for i, k in cls2name.items() if k < len(CATEGORIES) - 1}
+    else:
+        cls2name = {i: CATEGORIES[k] for i, k in cls2name.items()}
+
+    return cls2name
+
 
 # noinspection PyAbstractClass
 @gin.configurable(denylist=['model_dir', 'ppnet', 'training_phase', 'max_steps'])
@@ -70,6 +102,7 @@ class PatchClassificationModule(LightningModule):
             last_layer_optimizer_lr: float = gin.REQUIRED,
             ignore_void_class: bool = False,
             iter_size: int = 1,
+            cityscapes = False
     ):
         super().__init__()
         self.model_dir = model_dir
@@ -92,6 +125,11 @@ class PatchClassificationModule(LightningModule):
         self.ignore_void_class = ignore_void_class
         self.iter_size = iter_size
         self.loss_weight_kld = loss_weight_kld
+        self.cityscapes = cityscapes
+
+        self.cls2name = [] if not hasattr(self, 'cityscapes') else get_cls2name(not self.cityscapes) 
+
+        print('Only 19 from CS', self.cityscapes)
 
         os.makedirs(self.prototypes_dir, exist_ok=True)
         os.makedirs(self.checkpoints_dir, exist_ok=True)
@@ -123,11 +161,13 @@ class PatchClassificationModule(LightningModule):
         self.lr_scheduler = None
         self.iter_steps = 0
         self.iter_count = 0
+        self.total_iter_count = 0
+
         self.batch_metrics = defaultdict(list)
 
     def forward(self, x):
         return self.ppnet(x)
-
+    
     def _step(self, split_key: str, batch):
         optimizer = self.optimizers()
         if split_key == 'train' and self.iter_steps == 0:
@@ -244,30 +284,44 @@ class PatchClassificationModule(LightningModule):
         self.batch_metrics['kld_loss'].append(mcs_kld_loss.item())
         self.iter_steps += 1
 
+        if self.iter_steps == self.iter_size:
+                self.iter_count += 1
+                self.total_iter_count += 1
+
         if split_key == 'train':
             # print(split_key, self.iter_steps, self.iter_size, self.max_steps, self.max_steps // self.iter_size)
             self.manual_backward(mcs_loss / self.iter_size)
             if hasattr(self.ppnet, 'gsoftmax') and self.ppnet.gsoftmax is not None and self.iter_count % 10 == 0 and self.iter_steps % self.iter_size == 0:
                 print(self.training_phase, self.iter_count, 'of', self.max_steps // self.iter_size)
-                logs_dir = os.path.join(self.model_dir, 'logs')
-                os.makedirs(os.path.join(logs_dir, 'gsoft'), exist_ok=True)
-
-                path = os.path.join(logs_dir, 'gsoft', 'log.json')
                 compactness = self.ppnet.gsoftmax.get_compactness()
                 separability = self.ppnet.gsoftmax.get_separability()
                 ratio = compactness*separability
 
-                data = {'compactness' : list([float(e) for e in compactness]), 
+                mus = self.ppnet.gsoftmax.get_mu()
+                sigmas = self.ppnet.gsoftmax.get_sigma()
+
+                data = {'batch' : self.total_iter_count,
+                        'compactness' : list([float(e) for e in compactness]), 
                         'separability' : list([float(e) for e in separability]),
                         'ratio' : list([float(e) for e in ratio]),
                         'avg_compactness' : float(np.mean(compactness)),
                         'avg_separability' : float(np.mean(separability)),
-                        'avg_ratio' : float(np.mean(ratio))}
+                        'avg_ratio' : float(np.mean(ratio)),
+                        'mu' : list([float(e) for e in mus]),
+                        'sigma': list([float(e) for e in sigmas]),
+                        'loss' : mcs_loss.item(),
+                        'cross_entropy' : mcs_cross_entropy.item(),
+                        'kld_loss' : mcs_kld_loss.item()}
                 
-                log_json(data, path)
+                # logs_dir = os.path.join(self.model_dir, 'logs')
+                # os.makedirs(os.path.join(logs_dir, 'gsoft'), exist_ok=True)
+                # path = os.path.join(logs_dir, 'gsoft', 'log.json')
+                # log_json(data, path)
+
+                flattened_data = flatten_dict(data, self.cls2name)
+                wandb.log(flattened_data)
 
             if self.iter_steps == self.iter_size:
-                self.iter_count += 1
                 self.iter_steps = 0
                 optimizer.step()
 
@@ -327,9 +381,11 @@ class PatchClassificationModule(LightningModule):
             log(f'Saving best model, accuracy: ' + str(val_acc))
             self.best_acc = val_acc
             torch.save(obj=self.ppnet, f=os.path.join(self.checkpoints_dir, f'{stage_key}_best.pth'))
-            mlflow.log_metric('val_accuracy', val_acc)
+            # mlflow.log_metric('val_accuracy', val_acc)
+            wandb.log({'phase': self.training_phase, 'val_acc' : val_acc})
+
             print('logging model ', type(self.ppnet))
-            mlflow.pytorch.log_model(self.ppnet, str(stage_key)+'_best')
+            # mlflow.pytorch.log_model(self.ppnet, str(stage_key)+'_best')
 
     def _epoch_end(self, split_key: str):
         metrics = self.metrics[split_key]
@@ -343,10 +399,17 @@ class PatchClassificationModule(LightningModule):
 
         self.batch_metrics = defaultdict(list)
 
+        logdict = dict()
         for key in ['loss', 'cross_entropy', 'kld_loss']:
             self.log(f'{split_key}/{key}', metrics[key] / n_batches)
+            logdict[f'{split_key}_{key}'] = metrics[key] / n_batches
 
         self.log(f'{split_key}/accuracy', metrics['n_correct'] / metrics['n_patches'])
+
+        logdict[f'{split_key}/accuracy'] = metrics['n_correct'] / metrics['n_patches']
+        logdict['phase'] = self.training_phase
+        wandb.log(logdict)
+
         self.log('l1', self.ppnet.last_layer.weight.norm(p=1).item())
         if hasattr(self.ppnet, 'nearest_proto_only') and self.ppnet.nearest_proto_only:
             self.log('gumbel_tau', self.ppnet.gumbel_tau)
@@ -391,8 +454,8 @@ class PatchClassificationModule(LightningModule):
                 ]
             optimizer_specs.append({
                         'params': list(self.ppnet.gsoftmax.parameters()),
-                        'lr': 1e-3,
-                        'weight_decay': 5e-4
+                        'lr': self.warm_optimizer_lr_prototype_vectors,
+                        'weight_decay': self.warm_optimizer_weight_decay
                 }) if hasattr(self.ppnet, 'gsoftmax') and self.ppnet.gsoftmax is not None else None
         elif self.training_phase == 1:  # joint
             optimizer_specs = \
@@ -424,8 +487,8 @@ class PatchClassificationModule(LightningModule):
                 ]
             optimizer_specs.append({
                         'params': list(self.ppnet.gsoftmax.parameters()),
-                        'lr': 1e-3,
-                        'weight_decay': 5e-4
+                        'lr': self.joint_optimizer_lr_features,
+                        'weight_decay': self.joint_optimizer_weight_decay
                 }) if hasattr(self.ppnet, 'gsoftmax') and self.ppnet.gsoftmax is not None else None
         else:  # last layer
             optimizer_specs = [

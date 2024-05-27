@@ -30,6 +30,8 @@ PatchClassificationDataset.only_19_from_cityscapes = False
 PatchClassificationDataset.scales = (0.5, 1.5)
 PatchClassificationDataset.cells = True
 
+PatchClassificationModule.cityscapes = False
+
 PatchClassificationDataModule.dataloader_n_jobs = 8
 PatchClassificationDataModule.train_key = 'train'
 

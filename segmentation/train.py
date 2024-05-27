@@ -30,8 +30,11 @@ from deeplab_features import torchvision_resnet_weight_key_to_deeplab2
 
 Trainer = gin.external_configurable(Trainer)
 
-import mlflow
-mlflow.set_tracking_uri("/home/rvlaar/.mlflow")
+# import mlflow
+# mlflow.set_tracking_uri("/home/rvlaar/.mlflow")
+
+from loginwandb import wandb
+
 
 @gin.configurable(denylist=['config_path', 'experiment_name', 'neptune_experiment', 'pruned'])
 def train(
@@ -51,7 +54,9 @@ def train(
 ):
     seed_everything(random_seed)
 
-    mlflow.set_experiment(experiment_name+'_pruned_'+str(int(pruned)))
+    # mlflow.set_experiment(experiment_name+'_pruned_'+str(int(pruned)))
+    wandb.init(project=experiment_name+'_pruned_'+str(int(pruned)))
+
     results_dir = os.path.join(os.environ['RESULTS_DIR'], experiment_name)
     os.makedirs(results_dir, exist_ok=True)
     log(f'Starting experiment in "{results_dir}" from config {config_path}')
@@ -141,7 +146,7 @@ def train(
                 model_dir=results_dir,
                 ppnet=ppnet,
                 training_phase=0,
-                max_steps=warmup_steps,
+                max_steps=warmup_steps
             )
             trainer = Trainer(logger=loggers, checkpoint_callback=None, enable_progress_bar=False,
                               min_steps=1, max_steps=warmup_steps)
@@ -179,6 +184,7 @@ def train(
             push_prototypes=True
         )
 
+    
         push_prototypes(
             push_dataset,
             prototype_network_parallel=ppnet,
@@ -194,7 +200,7 @@ def train(
 
         torch.save(obj=ppnet, f=os.path.join(results_dir, f'checkpoints/push_last.pth'))
         torch.save(obj=ppnet, f=os.path.join(results_dir, f'checkpoints/push_best.pth'))
-        mlflow.pytorch.log_model(ppnet, 'train_push_best')
+        # mlflow.pytorch.log_model(ppnet, 'train_push_best')
 
         ppnet = torch.load(os.path.join(results_dir, f'checkpoints/push_last.pth'))
         ppnet = ppnet.cuda()
@@ -228,7 +234,7 @@ def train(
         model_dir=os.path.join(results_dir, 'pruned') if pruned else results_dir,
         ppnet=ppnet,
         training_phase=2,
-        max_steps=finetune_steps,
+        max_steps=finetune_steps
     )
     current_epoch = trainer.current_epoch if trainer is not None else 0
     trainer = Trainer(logger=loggers, callbacks=callbacks, checkpoint_callback=None,
@@ -256,3 +262,4 @@ def load_config_and_train(
 
 if __name__ == '__main__':
     argh.dispatch_command(load_config_and_train)
+    wandb.finish()
