@@ -1,4 +1,5 @@
 from typing import Optional
+from gsoftmax import GaussianSoftMaxCriterion
 
 import gin
 import torch
@@ -43,13 +44,18 @@ class PPNet(nn.Module):
                  prototype_activation_function='log',
                  add_on_layers_type='bottleneck',
                  bottleneck_stride: Optional[int] = None,
-                 patch_classification: bool = False):
+                 patch_classification: bool = False,
+                 gsoftmax_enabled: bool = False,
+                 gsoftmax_predict: bool = False):
 
         super(PPNet, self).__init__()
+        print('gsoft enabled', gsoftmax_enabled)
         self.img_size = img_size
         self.epsilon = 1e-4
         self.bottleneck_stride = bottleneck_stride
         self.patch_classification = patch_classification
+        self.gsoftmax = GaussianSoftMaxCriterion(num_classes) if gsoftmax_enabled else None
+        self.gsoftmax_predict = gsoftmax_predict
 
         self.prototype_vectors = nn.Parameter(torch.rand(prototype_shape), requires_grad=True)
 
@@ -159,7 +165,19 @@ class PPNet(nn.Module):
         return self.prototype_class_identity.shape[1]
 
     def run_last_layer(self, prototype_activations):
-        return self.last_layer(prototype_activations)
+        x = self.last_layer(prototype_activations)
+        # print('last layer shape', x.size())
+        # print('last layer values', torch.unique(x.int()))
+        # print('last layer values sum', torch.sum(x, 1))
+        if hasattr(self, 'gsoftmax_predict') and self.gsoftmax_predict:
+            x = self.gsoftmax.predict(x)
+
+        # print('gs last layer shape', x.size())
+        # print('gs last layer values', torch.unique(x.int()))
+        # print('gs last layer values sum', torch.sum(x, 1))
+        
+        return x
+        # return self.last_layer(prototype_activations)
 
     def conv_features(self, x):
         '''
@@ -261,6 +279,7 @@ class PPNet(nn.Module):
             return [self.forward_from_conv_features(c) for c in conv_features]
 
         # distances.shape = (batch_size, num_prototypes, n_patches_cols, n_patches_rows)
+
         distances = self._l2_convolution(conv_features)
 
         if hasattr(self, 'patch_classification') and self.patch_classification:
@@ -394,7 +413,9 @@ def construct_PPNet(
         prototype_shape=(2000, 512, 1, 1),
         num_classes=200,
         prototype_activation_function='log',
-        add_on_layers_type='bottleneck'
+        add_on_layers_type='bottleneck',
+        gsoftmax_enabled=False,
+        gsoftmax_predict=False
 ):
     features = base_architecture_to_features[base_architecture](pretrained=pretrained)
     if hasattr(features, 'conv_info'):
@@ -415,4 +436,6 @@ def construct_PPNet(
                  num_classes=num_classes,
                  init_weights=True,
                  prototype_activation_function=prototype_activation_function,
-                 add_on_layers_type=add_on_layers_type)
+                 add_on_layers_type=add_on_layers_type,
+                 gsoftmax_enabled=gsoftmax_enabled,
+                 gsoftmax_predict=gsoftmax_predict)

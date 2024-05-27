@@ -1,4 +1,5 @@
 """
+format
 python -m analysis.activation baseline-imnet-pascal pruned -p
 """
 
@@ -22,7 +23,7 @@ from segmentation import train
 from tqdm import tqdm
 from segmentation.dataset import resize_label
 from segmentation.constants import CITYSCAPES_CATEGORIES, CITYSCAPES_19_EVAL_CATEGORIES, \
-    PASCAL_CATEGORIES, PASCAL_ID_MAPPING, CITYSCAPES_MEAN, CITYSCAPES_STD
+    PASCAL_CATEGORIES, PASCAL_ID_MAPPING
 from settings import data_path, log
 
 from find_nearest import to_normalized_tensor
@@ -83,7 +84,7 @@ def make_act_map_plots(img: Image,
 
         print('class', classname, ' protos', len(protosidxs), protosidxs, proto_m[protosidxs])
 
-        fig, axs = plt.subplots(4, len(protosidxs), figsize=(5*len(protosidxs), 20))
+        fig, axs = plt.subplots(3, len(protosidxs), figsize=(5*len(protosidxs), 15))
         fig.suptitle(classname) 
         for col_idx, j in enumerate(protosidxs):
             # TODO 
@@ -118,20 +119,20 @@ def make_act_map_plots(img: Image,
             proto_rf = protos[j].cpu().reshape((8,8))
             # Invert resnet transform *std+mean
             axs[0][col_idx].imshow(overlayed_original_img_j)
-            axs[1][col_idx].imshow(proto_rf)
-            axs[1][col_idx].set_title('original_proto_idx'+str(proto_m[j]))\
+            # axs[1][col_idx].imshow(proto_rf)
+            # axs[1][col_idx].set_title('original_proto_idx'+str(proto_m[j]))\
             
             proto_95_path = os.path.join(model_path, 'prototypes', classname, f'prototype-img_{proto_m[j]}.png')
             with open(proto_95_path, 'rb') as f:
                 proto_95 = Image.open(f).convert('RGB')
-            axs[2][col_idx].imshow(proto_95)
-            axs[2][col_idx].set_title(f'Prototype {proto_m[j]} 95% activation')
+            axs[1][col_idx].imshow(proto_95)
+            axs[1][col_idx].set_title(f'Prototype {proto_m[j]} - 95% activation')
 
             original_with_bb_path = os.path.join(model_path, 'prototypes', classname, f'prototype-img_{proto_m[j]}-original_with_box.png')
             with open(original_with_bb_path, 'rb') as f:
                 original_with_bb = Image.open(f).convert('RGB')
-            axs[3][col_idx].imshow(original_with_bb)
-            axs[3][col_idx].set_title(f'Protype {proto_m[j]} patch origin')
+            axs[2][col_idx].imshow(original_with_bb)
+            axs[2][col_idx].set_title(f'Protype {proto_m[j]} - patch origin')
 
 
         plt.tight_layout()

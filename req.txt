@@ -147,3 +147,4 @@ werkzeug==2.0.3
 widgetsnbextension==3.5.2
 yarl==1.7.2
 zipp==3.7.0
+wandb==0.15.10

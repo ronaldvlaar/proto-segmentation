@@ -57,7 +57,7 @@ def train(
     log(f'Starting experiment in "{results_dir}" from config {config_path}')
 
     last_checkpoint = os.path.join(results_dir, 'checkpoints', 'nopush_best.pth')
-
+    
     if start_checkpoint:
         log(f'Loading checkpoint from {start_checkpoint}')
         ppnet = torch.load(start_checkpoint)
