@@ -141,7 +141,19 @@ def test(model, dataloader, class_specific=False, log=print):
                           class_specific=class_specific, log=log)
 
 
+def configure_gsoftmax(model, training_phase, log=print):
+    if not (hasattr(model, 'gsoftmax') and model.gsoftmax is not None):
+        return False
+    
+    phase_requires_gradient = {0 : False, 1: False, 2: True, -1: True}
+    
+    for p in model.gsoftmax.parameters():
+        p.requires_grad = phase_requires_gradient[training_phase]
+    
+    return True
+
 def last_only(model, log=print):
+    configure_gsoftmax(model, 2)
     if hasattr(model, 'module'):
         model = model.module
     for p in model.features.parameters():
@@ -154,6 +166,7 @@ def last_only(model, log=print):
 
 
 def warm_only(model, log=print):
+    configure_gsoftmax(model, 0)
     aspp_params = [
         model.features.base.aspp.c0.weight,
         model.features.base.aspp.c0.bias,
@@ -173,12 +186,14 @@ def warm_only(model, log=print):
         p.requires_grad = True
     model.prototype_vectors.requires_grad = True
     for p in model.last_layer.parameters():
-        p.requires_grad = True
+        # https://discuss.pytorch.org/t/what-happend-if-i-dont-set-certain-parameters-with-requires-grad-false-but-exclude-them-in-optimizer-params/150374/2 this one was set to True
+        p.requires_grad = False
     for p in aspp_params:
         p.requires_grad = True
 
 
 def joint(model, log=print):
+    configure_gsoftmax(model, 1)
     if hasattr(model, 'module'):
         model = model.module
     for p in model.features.parameters():
@@ -188,3 +203,20 @@ def joint(model, log=print):
     model.prototype_vectors.requires_grad = True
     for p in model.last_layer.parameters():
         p.requires_grad = True
+
+
+def afterjoint(model, log=print):
+    if not configure_gsoftmax(model, -1):
+        print('After joint phase cannot be configured, since model does not have the gsoftmax layer')
+        return False
+    if hasattr(model, 'module'):
+        model = model.module 
+    for p in model.features.parameters():
+        p.requires_grad = False
+    for p in model.add_on_layers.parameters():
+        p.requires_grad = False
+    model.prototype_vectors.requires_grad = True
+    for p in model.last_layer.parameters():
+        p.requires_grad = True
+
+    return True

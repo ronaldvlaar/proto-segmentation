@@ -20,15 +20,9 @@ from segmentation.constants import CITYSCAPES_CATEGORIES, CITYSCAPES_19_EVAL_CAT
     PASCAL_CATEGORIES, PASCAL_ID_MAPPING, CITYSCAPES_ID_2_LABEL
 from settings import data_path, log
 
-import mlflow
-mlflow.set_tracking_uri("/home/rvlaar/.mlflow")
-
 
 def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pascal: bool = False,
                    margin: int = 0):
-    # experiment_name = model_name+'_pruned_'
-    # experiment_name += '0' if training_phase != 'pruned' else '1' 
-    mlflow.set_experiment(model_name+'_'+training_phase)
     print(model_name, training_phase)
     model_path = os.path.join(os.environ['RESULTS_DIR'], model_name)
     config_path = os.path.join(model_path, 'config.gin')
@@ -40,7 +34,7 @@ def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pa
         checkpoint_path = os.path.join(model_path, f'checkpoints/{training_phase}_last.pth')
 
     log(f'Loading model from {checkpoint_path}')
-    ppnet = torch.load(checkpoint_path)  # , map_location=torch.device('cpu'))
+    ppnet = torch.load(checkpoint_path)
     ppnet = ppnet.cuda()
     ppnet.eval()
 
@@ -148,7 +142,6 @@ def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pa
 
     n_batches = int(np.ceil(len(all_img_files) / batch_size))
     batched_img_files = np.array_split(all_img_files, n_batches)
-    # batched_img_files = batched_img_files[:50]
 
     correct_pixels, total_pixels = 0, 0
 
@@ -156,11 +149,6 @@ def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pa
     np.seterr(divide='ignore', invalid='ignore')
 
     with torch.no_grad():
-        # mingt = 30
-        # maxgt = 0
-
-        # minpr = 30
-        # maxpr = 0
         for batch_img_files in tqdm(batched_img_files, desc='evaluating'):
             img_tensors = []
             anns = []
@@ -182,8 +170,6 @@ def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pa
                 if pascal:
                     img_tensor = torch.nn.functional.interpolate(img_tensor.unsqueeze(0),
                                                                  size=img_shape, mode='bilinear', align_corners=False)[0]
-                    # ann = resize_label(ann, size=(img_shape[1], img_shape[0])).cpu().detach().numpy()
-
                 anns.append(ann)
                 img_tensors.append(img_tensor)
 
@@ -192,8 +178,6 @@ def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pa
 
             batch_logits = batch_logits.permute(0, 3, 1, 2)
 
-            # batch_logits = F.interpolate(batch_logits, size=img_shape, mode='bilinear', align_corners=False)
-            # batch_distances = F.interpolate(batch_distances, size=img_shape, mode='bilinear', align_corners=False)
 
             for sample_i in range(len(batch_img_files)):
                 ann = anns[sample_i]
@@ -227,7 +211,7 @@ def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pa
                     gt_ratio.append(np.sum(gt))
 
                     CLS_I[cls_i] += np.sum(pr & gt)
-                    CLS_U[cls_i] += np.sum((pr | gt) & (ann != 0))  # ignore pixels where ground truth is void
+                    CLS_U[cls_i] += np.sum((pr | gt) & (ann != 0))
 
                 ciou = np.nan_to_num(np.array(clsi)/np.array(clsu), nan=0.0)
                 class_iou = dict(zip(list(pred2name.values()), ciou))
@@ -265,25 +249,6 @@ def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pa
                 
                 im2 = ax2.imshow(pred+1, cmap=class_cmap, vmin=0, vmax=len(pred2name)+1)
                 ax2.set_title('Predicted'+str(np.unique(pred+1)))
-
-                # fig.colorbar(im1, ax=ax1)
-                # fig.colorbar(im2, ax=ax2)
-
-                # if np.min(masked_ann) < mingt:
-                #     mingt = np.min(masked_ann)
-                #     print('mingt ', mingt)
-
-                # if np.max(masked_ann) > maxgt:
-                #     maxgt = np.max(masked_ann)
-                #     print('maxgt ', maxgt)
-
-                # if np.min(pred+1) < minpr:
-                #     minpr = np.min(pred+1)
-                #     print('minpr ', minpr)
-
-                # if np.max(pred+1) > maxpr:
-                #     maxpr = np.max(pred+1)
-                #     print('maxpr ', maxpr)
                 
                 plt.tight_layout()
                 plt.show()
@@ -294,7 +259,6 @@ def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pa
 
                 plt.clf()
 
-                # calculate statistics of prototypes occurrences as nearest
                 nearest_proto_cls = PROTO2CLS(nearest_proto)
 
                 for class_i, class_name in pred2name.items():

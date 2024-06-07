@@ -18,7 +18,7 @@ from helpers import list_of_distances
 from model import PPNet
 from segmentation.dataset import resize_label
 from settings import log
-from train_and_test import warm_only, joint, last_only
+from train_and_test import warm_only, joint, last_only, afterjoint
 
 from segmentation.constants import CITYSCAPES_CATEGORIES, CITYSCAPES_19_EVAL_CATEGORIES, \
     PASCAL_CATEGORIES, PASCAL_ID_MAPPING
@@ -129,8 +129,6 @@ class PatchClassificationModule(LightningModule):
 
         self.cls2name = [] if not hasattr(self, 'cityscapes') else get_cls2name(not self.cityscapes) 
 
-        print('Only 19 from CS', self.cityscapes)
-
         os.makedirs(self.prototypes_dir, exist_ok=True)
         os.makedirs(self.checkpoints_dir, exist_ok=True)
 
@@ -153,6 +151,12 @@ class PatchClassificationModule(LightningModule):
         elif self.training_phase == 1:
             joint(model=self.ppnet, log=log)
             log(f'JOINT TRAINING START. ({self.max_steps} steps)')
+        elif self.training_phase == -1:
+            if afterjoint(model=self.ppnet, log=log):
+                log(f'AFTER JOINT TRAINING START. ({self.max_steps} steps)')
+            else:
+                # Not continued in train due to absence of gsoftmax attribute
+                pass
         else:
             last_only(model=self.ppnet, log=log)
             log('LAST LAYER TRAINING START.')
@@ -191,13 +195,15 @@ class PatchClassificationModule(LightningModule):
             mcs_model_outputs = [mcs_model_outputs]
 
         mcs_loss, mcs_cross_entropy, mcs_kld_loss, mcs_cls_act_loss = 0.0, 0.0, 0.0, 0.0
+
+        # outputs_list = []
+        # targets_list = []
         for output, patch_activations in mcs_model_outputs:
             target = []
             for sample_target in mcs_target:
                 target.append(resize_label(sample_target, size=(output.shape[2], output.shape[1])).to(self.device))
             target = torch.stack(target, dim=0)
 
-            # we flatten target/output - classification is done per patch
             output = output.reshape(-1, output.shape[-1])
             target_img = target.reshape(target.shape[0], -1) # (batch_size, img_size)
             target = target.flatten()
@@ -211,7 +217,12 @@ class PatchClassificationModule(LightningModule):
                 target = target[target_not_void] - 1
                 output = output[target_not_void]
 
-            cross_entropy = self.ppnet.gsoftmax(output, target.long()) if hasattr(self.ppnet, 'gsoftmax') and self.ppnet.gsoftmax is not None else \
+            # cross_entropy = torch.nn.functional.cross_entropy(output, target.long(),)   
+
+            # outputs_list.append(output)
+            # targets_list.append(target.long())
+
+            cross_entropy = self.ppnet.gsoftmax.forward(output, target.long()) if hasattr(self.ppnet, 'gsoftmax') and self.ppnet.gsoftmax is not None else \
                 torch.nn.functional.cross_entropy(
                 output,
                 target.long(),)   
@@ -278,6 +289,9 @@ class PatchClassificationModule(LightningModule):
             mcs_kld_loss += kld_loss / len(mcs_model_outputs)
             metrics['n_correct'] += torch.sum(is_correct)
             metrics['n_patches'] += output.shape[0]
+        
+        # outputs = torch.cat(outputs_list, dim=0)
+        # targets = torch.cat(targets_list, dim=0)
 
         self.batch_metrics['loss'].append(mcs_loss.item())
         self.batch_metrics['cross_entropy'].append(mcs_cross_entropy.item())
@@ -289,8 +303,8 @@ class PatchClassificationModule(LightningModule):
                 self.total_iter_count += 1
 
         if split_key == 'train':
-            # print(split_key, self.iter_steps, self.iter_size, self.max_steps, self.max_steps // self.iter_size)
             self.manual_backward(mcs_loss / self.iter_size)
+
             if hasattr(self.ppnet, 'gsoftmax') and self.ppnet.gsoftmax is not None and self.iter_count % 10 == 0 and self.iter_steps % self.iter_size == 0:
                 print(self.training_phase, self.iter_count, 'of', self.max_steps // self.iter_size)
                 compactness = self.ppnet.gsoftmax.get_compactness()
@@ -312,11 +326,6 @@ class PatchClassificationModule(LightningModule):
                         'loss' : mcs_loss.item(),
                         'cross_entropy' : mcs_cross_entropy.item(),
                         'kld_loss' : mcs_kld_loss.item()}
-                
-                # logs_dir = os.path.join(self.model_dir, 'logs')
-                # os.makedirs(os.path.join(logs_dir, 'gsoft'), exist_ok=True)
-                # path = os.path.join(logs_dir, 'gsoft', 'log.json')
-                # log_json(data, path)
 
                 flattened_data = flatten_dict(data, self.cls2name)
                 wandb.log(flattened_data)
@@ -340,8 +349,6 @@ class PatchClassificationModule(LightningModule):
                 metrics[key] += mean_value
                 if key == 'loss':
                     self.log('train_loss_step', mean_value, on_step=True, prog_bar=True)
-                # print(key, mean_value)
-            # print()
             metrics['n_batches'] += 1
 
             self.batch_metrics = defaultdict(list)
@@ -372,20 +379,16 @@ class PatchClassificationModule(LightningModule):
             stage_key = 'warmup'
         elif self.training_phase == 1:
             stage_key = 'nopush'
+        elif self.training_phase == -1:
+            stage_key = 'after_joint_nopush'
         else:
             stage_key = 'push'
 
         torch.save(obj=self.ppnet, f=os.path.join(self.checkpoints_dir, f'{stage_key}_last.pth'))
-
         if val_acc > self.best_acc:
             log(f'Saving best model, accuracy: ' + str(val_acc))
             self.best_acc = val_acc
             torch.save(obj=self.ppnet, f=os.path.join(self.checkpoints_dir, f'{stage_key}_best.pth'))
-            # mlflow.log_metric('val_accuracy', val_acc)
-            wandb.log({'phase': self.training_phase, 'val_acc' : val_acc})
-
-            print('logging model ', type(self.ppnet))
-            # mlflow.pytorch.log_model(self.ppnet, str(stage_key)+'_best')
 
     def _epoch_end(self, split_key: str):
         metrics = self.metrics[split_key]
@@ -408,6 +411,7 @@ class PatchClassificationModule(LightningModule):
 
         logdict[f'{split_key}/accuracy'] = metrics['n_correct'] / metrics['n_patches']
         logdict['phase'] = self.training_phase
+        logdict['n_batches'] = n_batches
         wandb.log(logdict)
 
         self.log('l1', self.ppnet.last_layer.weight.norm(p=1).item())
@@ -452,11 +456,11 @@ class PatchClassificationModule(LightningModule):
                         'lr': self.warm_optimizer_lr_prototype_vectors
                     }
                 ]
-            optimizer_specs.append({
-                        'params': list(self.ppnet.gsoftmax.parameters()),
-                        'lr': self.warm_optimizer_lr_prototype_vectors,
-                        'weight_decay': self.warm_optimizer_weight_decay
-                }) if hasattr(self.ppnet, 'gsoftmax') and self.ppnet.gsoftmax is not None else None
+            # optimizer_specs.append({
+            #             'params': list(self.ppnet.gsoftmax.parameters()),
+            #             'lr': 1e-3,
+            #             'weight_decay': self.warm_optimizer_weight_decay
+            #     }) if hasattr(self.ppnet, 'gsoftmax') and self.ppnet.gsoftmax is not None else None
         elif self.training_phase == 1:  # joint
             optimizer_specs = \
                 [
@@ -485,11 +489,26 @@ class PatchClassificationModule(LightningModule):
                         'lr': self.joint_optimizer_lr_prototype_vectors
                     }
                 ]
-            optimizer_specs.append({
+            # optimizer_specs.append({
+            #             'params': list(self.ppnet.gsoftmax.parameters()),
+            #             'lr': 1e-3,
+            #             'weight_decay': self.joint_optimizer_weight_decay
+            #     }) if hasattr(self.ppnet, 'gsoftmax') and self.ppnet.gsoftmax is not None else None
+        elif self.training_phase == -1: # after joint
+            optimizer_specs = [
+                {
+                        'params': self.ppnet.prototype_vectors,
+                        'lr': self.joint_optimizer_lr_prototype_vectors
+                },
+                {
+                        'params': self.ppnet.last_layer.parameters(),
+                        'lr': self.last_layer_optimizer_lr
+                },
+                {
                         'params': list(self.ppnet.gsoftmax.parameters()),
-                        'lr': self.joint_optimizer_lr_features,
-                        'weight_decay': self.joint_optimizer_weight_decay
-                }) if hasattr(self.ppnet, 'gsoftmax') and self.ppnet.gsoftmax is not None else None
+                        'lr': 1e-3
+                }
+            ]            
         else:  # last layer
             optimizer_specs = [
                 {
@@ -497,6 +516,11 @@ class PatchClassificationModule(LightningModule):
                     'lr': self.last_layer_optimizer_lr
                 }
             ]
+
+            optimizer_specs.append({
+                        'params': list(self.ppnet.gsoftmax.parameters()),
+                        'lr': 1e-4
+                }) if hasattr(self.ppnet, 'gsoftmax') and self.ppnet.gsoftmax is not None else None
 
         optimizer = torch.optim.Adam(optimizer_specs)
 

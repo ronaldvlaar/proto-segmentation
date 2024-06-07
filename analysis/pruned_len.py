@@ -1,6 +1,6 @@
 """
 format
-python -m analysis.activation baseline-imnet-pascal pruned -p
+python -m analysis.pruned_len baseline-imnet-pascal pruned -p
 """
 
 import json

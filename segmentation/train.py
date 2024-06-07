@@ -30,8 +30,6 @@ from deeplab_features import torchvision_resnet_weight_key_to_deeplab2
 
 Trainer = gin.external_configurable(Trainer)
 
-# import mlflow
-# mlflow.set_tracking_uri("/home/rvlaar/.mlflow")
 
 from loginwandb import wandb
 
@@ -172,6 +170,23 @@ def train(
                           min_steps=1, max_steps=joint_steps)
         trainer.fit_loop.current_epoch = current_epoch + 1
         trainer.fit(model=module, datamodule=data_module)
+        # Update current epoch for gsoftmax
+        current_epoch = trainer.current_epoch
+
+        if hasattr(ppnet, 'gsoftmax') and ppnet.gsoftmax is not None:
+            data_module = PatchClassificationDataModule(batch_size=2)
+            module = PatchClassificationModule(
+                model_dir=results_dir,
+                ppnet=ppnet,
+                training_phase=-1,
+                max_steps=warmup_steps
+            )
+
+            trainer = Trainer(logger=loggers, checkpoint_callback=None, enable_progress_bar=False,
+                            min_steps=1, max_steps=warmup_steps)
+            trainer.fit_loop.current_epoch = current_epoch + 1
+            trainer.fit(model=module, datamodule=data_module)
+
 
         log('SAVING PROTOTYPES')
         ppnet = ppnet.cuda()
@@ -184,7 +199,6 @@ def train(
             push_prototypes=True
         )
 
-    
         push_prototypes(
             push_dataset,
             prototype_network_parallel=ppnet,
@@ -200,7 +214,6 @@ def train(
 
         torch.save(obj=ppnet, f=os.path.join(results_dir, f'checkpoints/push_last.pth'))
         torch.save(obj=ppnet, f=os.path.join(results_dir, f'checkpoints/push_best.pth'))
-        # mlflow.pytorch.log_model(ppnet, 'train_push_best')
 
         ppnet = torch.load(os.path.join(results_dir, f'checkpoints/push_last.pth'))
         ppnet = ppnet.cuda()

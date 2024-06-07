@@ -8,7 +8,7 @@ construct_PPNet.num_classes = 21
 construct_PPNet.prototype_activation_function = 'log'
 construct_PPNet.add_on_layers_type = 'deeplab_simple'
 construct_PPNet.gsoftmax_enabled = True
-construct_PPNet.gsoftmax_predict = True
+construct_PPNet.gsoftmax_xscale = True
 
 
 deeplabv2_resnet101_features.deeplab_n_features = 64

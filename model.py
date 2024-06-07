@@ -46,7 +46,7 @@ class PPNet(nn.Module):
                  bottleneck_stride: Optional[int] = None,
                  patch_classification: bool = False,
                  gsoftmax_enabled: bool = False,
-                 gsoftmax_predict: bool = False):
+                 gsoftmax_xscale: bool = False):
 
         super(PPNet, self).__init__()
         print('gsoft enabled', gsoftmax_enabled)
@@ -55,7 +55,7 @@ class PPNet(nn.Module):
         self.bottleneck_stride = bottleneck_stride
         self.patch_classification = patch_classification
         self.gsoftmax = GaussianSoftMaxCriterion(num_classes) if gsoftmax_enabled else None
-        self.gsoftmax_predict = gsoftmax_predict
+        self.gsoftmax_xscale = gsoftmax_xscale
 
         self.prototype_vectors = nn.Parameter(torch.rand(prototype_shape), requires_grad=True)
 
@@ -129,8 +129,14 @@ class PPNet(nn.Module):
             self.add_on_layers = nn.Sequential(*add_on_layers)
         elif add_on_layers_type == 'deeplab_simple':
             log('deeplab_simple add_on_layers')
+            # self.add_on_layers = nn.Sequential(
+            #     nn.Sigmoid()
+            # )
+
+            # Relu vs sigmoid
+            # https://wandb.ai/ayush-thakur/dl-question-bank/reports/ReLU-vs-Sigmoid-Function-in-Deep-Neural-Networks--VmlldzoyMDk0MzI
             self.add_on_layers = nn.Sequential(
-                nn.Sigmoid()
+                nn.ReLU()
             )
         else:
             self.add_on_layers = nn.Sequential(
@@ -146,6 +152,7 @@ class PPNet(nn.Module):
         self.ones = nn.Parameter(torch.ones(self.prototype_shape),
                                  requires_grad=False)
 
+        self.normalize_layer = nn.BatchNorm1d(self.num_classes)
         self.last_layer = nn.Linear(self.num_prototypes, self.num_classes,
                                     bias=False)  # do not use bias
 
@@ -166,18 +173,20 @@ class PPNet(nn.Module):
 
     def run_last_layer(self, prototype_activations):
         x = self.last_layer(prototype_activations)
-        # print('last layer shape', x.size())
-        # print('last layer values', torch.unique(x.int()))
-        # print('last layer values sum', torch.sum(x, 1))
-        if hasattr(self, 'gsoftmax_predict') and self.gsoftmax_predict:
-            x = self.gsoftmax.predict(x)
 
-        # print('gs last layer shape', x.size())
-        # print('gs last layer values', torch.unique(x.int()))
-        # print('gs last layer values sum', torch.sum(x, 1))
+        if self.gsoftmax_xscale:
+            # scaling to [-6, 6]
+            x_min = torch.min(x)
+            x_max = torch.max(x)
+            x = (x-x_min) / (x_max-x_min)
+            a, b = -6, 6
+            x = x * (b - a) + a
+
+        if not torch.is_grad_enabled() and self.gsoftmax is not None:
+            x = self.gsoftmax.predict(x)
+            # print('pred')
         
         return x
-        # return self.last_layer(prototype_activations)
 
     def conv_features(self, x):
         '''
@@ -190,6 +199,7 @@ class PPNet(nn.Module):
             return [self.add_on_layers(x_scaled) for x_scaled in x]
 
         x = self.add_on_layers(x)
+        
         return x
 
     @staticmethod
@@ -255,6 +265,7 @@ class PPNet(nn.Module):
             return self.prototype_activation_function(distances)
 
     def forward(self, x, **kwargs):
+        # print('forward', x)
         conv_features = self.conv_features(x)
 
         # MCS
@@ -279,7 +290,6 @@ class PPNet(nn.Module):
             return [self.forward_from_conv_features(c) for c in conv_features]
 
         # distances.shape = (batch_size, num_prototypes, n_patches_cols, n_patches_rows)
-
         distances = self._l2_convolution(conv_features)
 
         if hasattr(self, 'patch_classification') and self.patch_classification:
@@ -415,7 +425,7 @@ def construct_PPNet(
         prototype_activation_function='log',
         add_on_layers_type='bottleneck',
         gsoftmax_enabled=False,
-        gsoftmax_predict=False
+        gsoftmax_xscale=False
 ):
     features = base_architecture_to_features[base_architecture](pretrained=pretrained)
     if hasattr(features, 'conv_info'):
@@ -438,4 +448,4 @@ def construct_PPNet(
                  prototype_activation_function=prototype_activation_function,
                  add_on_layers_type=add_on_layers_type,
                  gsoftmax_enabled=gsoftmax_enabled,
-                 gsoftmax_predict=gsoftmax_predict)
+                 gsoftmax_xscale=gsoftmax_xscale)

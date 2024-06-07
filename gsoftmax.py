@@ -1,51 +1,41 @@
+"""
+G-softmax from https://github.com/luoyan407/gsoftmax
+"""
+
 import torch
-import torch.nn as nn
-from torch.distributions import Normal
+from torch import nn
+from torch.distributions.normal import Normal
+import math
 
 class GaussianSoftMaxCriterion(nn.Module):
-    def __init__(self, num_classes, mu=0, sigma=1, lambda_par=1):
+    def __init__(self, num_classes, mu=-0.05, sigma=1.0, scale=1.0):
         super(GaussianSoftMaxCriterion, self).__init__()
+        self.num_classes = num_classes
         self.mu = nn.Parameter(torch.ones(num_classes) * mu)
         self.sigma = nn.Parameter(torch.ones(num_classes) * sigma)
-        self.num_classes = num_classes
-        self.ce_criterion = nn.CrossEntropyLoss()
-        self.lambda_par = lambda_par
-    
-    def forward(self, X, y):
-        mu = self.mu.unsqueeze(0).expand(X.size(0), self.num_classes)
-        sigma = torch.clamp(self.sigma.unsqueeze(0).expand(X.size(0), self.num_classes), min=1e-6)
+        self.cecriterion = nn.CrossEntropyLoss()
+        self.scale = scale
+
+    def forward(self, _input, _target):
+        input = _input.clone()
+        normal_dist = Normal(self.mu.to(input.device), torch.clamp(self.sigma.to(input.device), min=1e-6))
+        prob = normal_dist.cdf(input)
+        prob = prob * self.scale + input
         
-        Pr = Normal(mu, sigma).cdf(X.double())
-        Pr = Pr.type_as(X) * self.lambda_par + X
+        self.output = self.cecriterion(prob, _target)
+        
+        return self.output
 
-        return self.ce_criterion(Pr, y)
+    def predict(self, _input):
+        input = _input.clone()
+        normal_dist = Normal(self.mu.to(input.device), torch.clamp(self.sigma.to(input.device), min=1e-6))
+        prob = normal_dist.cdf(input)
+        prob = prob * self.scale + input
+        exp_sum = torch.exp(prob).sum(dim=1, keepdim=True)
 
-    # def forward(self, X, y):
-    #     Pr = torch.zeros_like(X)
+        output = torch.exp(prob) / exp_sum
 
-    #     for i in range(self.num_classes):
-    #         Pr[:, i] = Normal(self.mu[i], self.sigma[i]).cdf(X[:, i].double())
-    #     Pr = (Pr.type_as(X)) * self.lambda_par + X
-
-    #     return self.ce_criterion(Pr, y)
-    
-    def predict(self, X):
-        # print(X, len(X))
-        # Pr = torch.zeros_like(X)
-        # for i in range(self.num_classes):
-        #     Pr[:, i] = Normal(self.mu[i], self.sigma[i]).cdf(X[:, i].double())
-        # Pr = (Pr.type_as(X)) * self.lambda_par + X
-        # exp_sum = torch.exp(Pr).sum(dim=1, keepdim=True)
-        # pred = torch.exp(Pr) / exp_sum
-
-        mu = self.mu.unsqueeze(0).expand(X.size(0), self.num_classes)
-        sigma = torch.clamp(self.sigma.unsqueeze(0).expand(X.size(0), self.num_classes), min=1e-10)
-        Pr = Normal(mu, sigma).cdf(X.double())
-        Pr = Pr * self.lambda_par + X
-        exp_sum = torch.exp(Pr).sum(dim=1, keepdim=True)
-        pred = torch.exp(Pr) / exp_sum
-
-        return pred
+        return output
     
     def get_compactness(self):
         return 1/self.sigma.cpu().detach().numpy()
@@ -75,10 +65,6 @@ class GaussianSoftMaxCriterion(nn.Module):
     
     def get_sigma(self):
         return self.sigma.cpu().detach().numpy()
-    
 
-if __name__ == '__main__':
-    model = GaussianSoftMaxCriterion(20)
-    model.get_separability()
-    # print(list(model.parameters()))
-    # print(dict(model.named_parameters()))
+    def __str__(self):
+        return f'{self.__class__.__name__}(mu={self.mu}, sigma={self.sigma}, scale={self.scale})'
