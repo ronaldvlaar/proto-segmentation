@@ -174,7 +174,7 @@ class PPNet(nn.Module):
     def run_last_layer(self, prototype_activations):
         x = self.last_layer(prototype_activations)
 
-        if self.gsoftmax_xscale:
+        if hasattr(self, 'gsoftmax_xscale') and self.gsoftmax_xscale:
             # scaling to [-6, 6]
             x_min = torch.min(x)
             x_max = torch.max(x)
