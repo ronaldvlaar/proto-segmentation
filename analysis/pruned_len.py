@@ -26,8 +26,6 @@ def run(model_name: str, training_phase: str, batch_size: int = 2, pascal: bool 
     else:
         cls2name = {i: CATEGORIES[k] for i, k in cls2name.items()}
 
-    print('protos before pruning', len(cls2name)*10)
-
     proto_m = np.array(range(len(cls2name)*10))
     um = []
     km = []

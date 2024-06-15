@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from deeplab_features import deeplabv2_resnet101_features
+from dinov2_features import dinov2_features
 from settings import log
 from resnet_features import resnet18_features, resnet34_features, resnet50_features, resnet101_features, \
     resnet152_features
@@ -27,6 +28,7 @@ base_architecture_to_features = {'resnet18': resnet18_features,
                                  'densenet169': densenet169_features,
                                  'densenet201': densenet201_features,
                                  'deeplabv2_resnet101': deeplabv2_resnet101_features,
+                                 'dinov2' : dinov2_features,
                                  'vgg11': vgg11_features,
                                  'vgg11_bn': vgg11_bn_features,
                                  'vgg13': vgg13_features,
@@ -171,20 +173,32 @@ class PPNet(nn.Module):
     def num_classes(self):
         return self.prototype_class_identity.shape[1]
 
-    def run_last_layer(self, prototype_activations):
+    def run_last_layer(self, prototype_activations, inference_activation=True):
+        """
+        In case the model has a gsoftmax layer, the raw logits can be obtained by setting
+        inference_activation to False.
+        """
+
         x = self.last_layer(prototype_activations)
 
-        if hasattr(self, 'gsoftmax_xscale') and self.gsoftmax_xscale:
-            # scaling to [-6, 6]
-            x_min = torch.min(x)
-            x_max = torch.max(x)
-            x = (x-x_min) / (x_max-x_min)
-            a, b = -6, 6
-            x = x * (b - a) + a
+        # if hasattr(self, 'gsoftmax_xscale') and self.gsoftmax_xscale:
+        #     # scaling to [-6, 6]
+        #     x_min = torch.min(x)
+        #     x_max = torch.max(x)
+        #     x = (x-x_min) / (x_max-x_min)
+        #     a, b = -6, 6
+        #     x = x * (b - a) + a
 
-        if not torch.is_grad_enabled() and self.gsoftmax is not None:
-            x = self.gsoftmax.predict(x)
-            # print('pred')
+        # scaling to [-6, 6]
+        # x_min = torch.min(x)
+        # x_max = torch.max(x)
+        # x = (x-x_min) / (x_max-x_min)
+        # a, b = -5, 10
+        # x = x * (b - a) + a
+
+        if inference_activation:
+            if not torch.is_grad_enabled() and self.gsoftmax is not None:
+                x = self.gsoftmax.predict(x)
         
         return x
 
@@ -265,7 +279,6 @@ class PPNet(nn.Module):
             return self.prototype_activation_function(distances)
 
     def forward(self, x, **kwargs):
-        # print('forward', x)
         conv_features = self.conv_features(x)
 
         # MCS
@@ -285,7 +298,7 @@ class PPNet(nn.Module):
         logits, distances = self.forward_from_conv_features(conv_features, **kwargs)
         return logits, distances, conv_features
 
-    def forward_from_conv_features(self, conv_features, return_activations=False, return_distances=False):
+    def forward_from_conv_features(self, conv_features, return_activations=False, return_distances=False, inference_activation=False):
         if isinstance(conv_features, list):
             return [self.forward_from_conv_features(c) for c in conv_features]
 
@@ -301,7 +314,7 @@ class PPNet(nn.Module):
             dist_view = dist_view.reshape(-1, num_prototypes)
             prototype_activations = self.distance_2_similarity(dist_view)
 
-            logits = self.run_last_layer(prototype_activations)
+            logits = self.run_last_layer(prototype_activations, inference_activation=inference_activation)
 
             # shape: (batch_size, n_patches_cols, n_patches_rows, num_classes)
             logits = logits.reshape(batch_size, n_patches_cols, n_patches_rows, -1)
@@ -320,7 +333,7 @@ class PPNet(nn.Module):
             # min_distances.shape = (batch_size, num_prototypes)
             min_distances = min_distances.view(-1, self.num_prototypes)
             prototype_activations = self.distance_2_similarity(min_distances)
-            logits = self.run_last_layer(prototype_activations)
+            logits = self.run_last_layer(prototype_activations, inference_activation=inference_activation)
 
             if return_distances:
                 return logits, min_distances, distances

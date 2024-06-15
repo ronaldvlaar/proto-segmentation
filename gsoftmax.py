@@ -5,7 +5,31 @@ G-softmax from https://github.com/luoyan407/gsoftmax
 import torch
 from torch import nn
 from torch.distributions.normal import Normal
-import math
+import numpy as np
+
+
+def compactness(sigmas): return 1/sigmas
+
+def separability(mu, sigma, num_classes):
+    class_separability = np.zeros(num_classes)
+    
+    for i in range(num_classes):
+        kld_sum = 0
+        for j in range(num_classes):
+            if i != j:
+                sigma_i = sigma[i]
+                sigma_j = sigma[j]
+                mu_i = mu[i]
+                mu_j = mu[j]
+                
+                kld = np.log(sigma_j / sigma_i) + (sigma_i**2 + (mu_i - mu_j)**2) / (2 * sigma_j**2) - 0.5
+                kld2 = np.log(sigma_i / sigma_j) + (sigma_j**2 + (mu_j - mu_i)**2) / (2 * sigma_i**2) - 0.5
+                kld_sum += (kld+kld2)
+        
+        class_separability[i] = kld_sum / (2*(num_classes-1))
+
+    return class_separability
+
 
 class GaussianSoftMaxCriterion(nn.Module):
     def __init__(self, num_classes, mu=-0.05, sigma=1.0, scale=1.0):
@@ -38,27 +62,10 @@ class GaussianSoftMaxCriterion(nn.Module):
         return output
     
     def get_compactness(self):
-        return 1/self.sigma.cpu().detach().numpy()
+        return compactness(self.sigma.cpu().detach().numpy())
 
     def get_separability(self):
-        class_separability = torch.zeros(self.num_classes)
-        
-        for i in range(self.num_classes):
-            kld_sum = 0
-            for j in range(self.num_classes):
-                if i != j:
-                    sigma_i = self.sigma[i]
-                    sigma_j = self.sigma[j]
-                    mu_i = self.mu[i]
-                    mu_j = self.mu[j]
-                    
-                    kld = torch.log(sigma_j / sigma_i) + (sigma_i**2 + (mu_i - mu_j)**2) / (2 * sigma_j**2) - 0.5
-                    kld2 = torch.log(sigma_i / sigma_j) + (sigma_j**2 + (mu_j - mu_i)**2) / (2 * sigma_i**2) - 0.5
-                    kld_sum += (kld+kld2)
-            
-            class_separability[i] = kld_sum / (2*(self.num_classes-1))
-
-        return class_separability.detach().numpy()
+        return separability(self.mu.cpu().detach().numpy(), self.sigma.cpu().detach().numpy(), self.num_classes)
     
     def get_mu(self):
         return self.mu.cpu().detach().numpy()

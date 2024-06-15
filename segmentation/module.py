@@ -20,8 +20,7 @@ from segmentation.dataset import resize_label
 from settings import log
 from train_and_test import warm_only, joint, last_only, afterjoint
 
-from segmentation.constants import CITYSCAPES_CATEGORIES, CITYSCAPES_19_EVAL_CATEGORIES, \
-    PASCAL_CATEGORIES, PASCAL_ID_MAPPING
+from helpfunc import flatten_dict, get_cls2name
 
 # import mlflow
 import wandb
@@ -40,43 +39,6 @@ def reset_metrics() -> Dict:
         'kld_loss': 0,
         'loss': 0
     }
-
-
-def log_json(data, path):
-    if os.path.isfile(path):
-        with open(path, 'r') as json_file:
-            current = json.load(json_file)
-    else:
-        current = []
-    current.append(data)
-    with open(path, 'w') as json_file:
-        json.dump(current, json_file, indent=4)
-
-
-def flatten_dict(d, cls2name):
-    flattened_dict = {}
-    for k, v in d.items():
-        if isinstance(v, list):
-            for index, item in enumerate(v):
-                new_key = f"{k}_{index}" if len(cls2name) == 0 else f"{k}_{cls2name[index]}"
-                flattened_dict[new_key] = item
-        else:
-            flattened_dict[k] = v
-
-    return flattened_dict
-
-
-def get_cls2name(pascal):
-    ID_MAPPING = PASCAL_ID_MAPPING if pascal else CITYSCAPES_19_EVAL_CATEGORIES
-    CATEGORIES = PASCAL_CATEGORIES if pascal else CITYSCAPES_CATEGORIES
-
-    cls2name = {k - 1: i for i, k in ID_MAPPING.items() if k > 0}
-    if pascal:
-        cls2name = {i: CATEGORIES[k + 1] for i, k in cls2name.items() if k < len(CATEGORIES) - 1}
-    else:
-        cls2name = {i: CATEGORIES[k] for i, k in cls2name.items()}
-
-    return cls2name
 
 
 # noinspection PyAbstractClass

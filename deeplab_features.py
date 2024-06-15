@@ -58,3 +58,13 @@ def deeplabv2_resnet101_features(pretrained=False, deeplab_n_features: int = gin
         ),
         scales=scales,
     )
+
+
+if __name__ == '__main__':
+    features = deeplabv2_resnet101_features(pretrained=True, deeplab_n_features=64, scales=[0.5, 0.75])
+
+    import torch
+    sample_input = torch.randn(2, 3, 321, 321)
+    
+    for e in features(sample_input):
+        print(e.shape)
