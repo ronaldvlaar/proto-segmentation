@@ -3,10 +3,14 @@
 
 *.sh
 /tb_csv
+/csv
 
 /wandb
 
+nohup.out
+crfmodule.py
 test.py
+temp.py
 
 /analysis/img
 

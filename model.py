@@ -1,5 +1,6 @@
 from typing import Optional
 from gsoftmax import GaussianSoftMaxCriterion
+from crfmodule import CRFModule
 
 import gin
 import torch
@@ -48,7 +49,8 @@ class PPNet(nn.Module):
                  bottleneck_stride: Optional[int] = None,
                  patch_classification: bool = False,
                  gsoftmax_enabled: bool = False,
-                 gsoftmax_xscale: bool = False):
+                 gsoftmax_xscale: bool = False,
+                 dinov2: bool = False):
 
         super(PPNet, self).__init__()
         print('gsoft enabled', gsoftmax_enabled)
@@ -58,6 +60,7 @@ class PPNet(nn.Module):
         self.patch_classification = patch_classification
         self.gsoftmax = GaussianSoftMaxCriterion(num_classes) if gsoftmax_enabled else None
         self.gsoftmax_xscale = gsoftmax_xscale
+        self.dinov2 = dinov2
 
         self.prototype_vectors = nn.Parameter(torch.rand(prototype_shape), requires_grad=True)
 
@@ -140,6 +143,11 @@ class PPNet(nn.Module):
             self.add_on_layers = nn.Sequential(
                 nn.ReLU()
             )
+        elif add_on_layers_type == 'dinov2_simple':
+            self.add_on_layers = nn.Sequential(
+                nn.ReLU()
+            )
+
         else:
             self.add_on_layers = nn.Sequential(
                 nn.Conv2d(in_channels=first_add_on_layer_in_channels, out_channels=self.prototype_shape[1],
@@ -173,30 +181,17 @@ class PPNet(nn.Module):
     def num_classes(self):
         return self.prototype_class_identity.shape[1]
 
-    def run_last_layer(self, prototype_activations, inference_activation=True):
+    def run_last_layer(self, prototype_activations, inference_activation=True, inference_crf=True):
         """
         In case the model has a gsoftmax layer, the raw logits can be obtained by setting
-        inference_activation to False.
+        inference_activation to False and when the model is in evaluation mode.
         """
 
         x = self.last_layer(prototype_activations)
 
-        # if hasattr(self, 'gsoftmax_xscale') and self.gsoftmax_xscale:
-        #     # scaling to [-6, 6]
-        #     x_min = torch.min(x)
-        #     x_max = torch.max(x)
-        #     x = (x-x_min) / (x_max-x_min)
-        #     a, b = -6, 6
-        #     x = x * (b - a) + a
-
-        # scaling to [-6, 6]
-        # x_min = torch.min(x)
-        # x_max = torch.max(x)
-        # x = (x-x_min) / (x_max-x_min)
-        # a, b = -5, 10
-        # x = x * (b - a) + a
-
         if inference_activation:
+            # If true and in evaluation (inference) mode, the gsoftmax function is applied to the logits.
+            # based on the learned feature distributions per class.
             if not torch.is_grad_enabled() and self.gsoftmax is not None:
                 x = self.gsoftmax.predict(x)
         
@@ -438,7 +433,8 @@ def construct_PPNet(
         prototype_activation_function='log',
         add_on_layers_type='bottleneck',
         gsoftmax_enabled=False,
-        gsoftmax_xscale=False
+        gsoftmax_xscale=False,
+        dinov2=False,
 ):
     features = base_architecture_to_features[base_architecture](pretrained=pretrained)
     if hasattr(features, 'conv_info'):
@@ -461,4 +457,6 @@ def construct_PPNet(
                  prototype_activation_function=prototype_activation_function,
                  add_on_layers_type=add_on_layers_type,
                  gsoftmax_enabled=gsoftmax_enabled,
-                 gsoftmax_xscale=gsoftmax_xscale)
+                 gsoftmax_xscale=gsoftmax_xscale,
+                 dinov2=dinov2,
+                 )

@@ -182,6 +182,11 @@ def warm_only(model, log=print):
         model = model.module
     for p in model.features.parameters():
         p.requires_grad = False
+
+    # temp, uncomment last and comment this one for aspp
+    # for p in model.features.base.conv1.parameters():
+    #     p.requires_grad = True
+    
     for p in model.add_on_layers.parameters():
         p.requires_grad = True
     model.prototype_vectors.requires_grad = True
@@ -196,8 +201,14 @@ def joint(model, log=print):
     configure_gsoftmax(model, 1)
     if hasattr(model, 'module'):
         model = model.module
-    for p in model.features.parameters():
-        p.requires_grad = True
+    if hasattr(model, 'dinov2') and model.dinov2:
+        for p in model.features.base.aspp.parameters():
+            p.requires_grad = True
+        # for p in model.features.base.conv1.parameters():
+        #     p.requires_grad = True 
+    else:
+         for p in model.features.parameters():
+            p.requires_grad = True
     for p in model.add_on_layers.parameters():
         p.requires_grad = True
     model.prototype_vectors.requires_grad = True

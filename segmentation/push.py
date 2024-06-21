@@ -10,7 +10,7 @@ from PIL import Image
 from tqdm import tqdm
 from torchvision import transforms
 
-from find_nearest import to_normalized_tensor
+from find_nearest import to_normalized_tensor, to_normalized_tensor_dino
 from helpers import makedir, find_continuous_high_activation_crop
 from segmentation.constants import PASCAL_ID_MAPPING, PASCAL_CATEGORIES, CITYSCAPES_19_EVAL_CATEGORIES, \
     CITYSCAPES_CATEGORIES
@@ -33,6 +33,7 @@ def push_prototypes(dataset: PatchClassificationDataset,
                     log=print,
                     pascal=False,
                     prototype_activation_function_in_numpy=None):
+    
     ID_MAPPING = PASCAL_ID_MAPPING if pascal else CITYSCAPES_19_EVAL_CATEGORIES
     CATEGORIES = PASCAL_CATEGORIES if pascal else CITYSCAPES_CATEGORIES
 
@@ -113,6 +114,7 @@ def push_prototypes(dataset: PatchClassificationDataset,
         img = img.crop((margin_size, margin_size, img.width - margin_size, img.height - margin_size))
 
         gt_ann = np.load(os.path.join(dataset.annotations_dir, img_id + '.npy'))
+        # print('gt', gt_ann, os.path.join(dataset.annotations_dir, img_id + '.npy'), np.unique(gt_ann))
 
         with torch.no_grad():
             update_prototypes_on_image(dataset,
@@ -130,7 +132,7 @@ def push_prototypes(dataset: PatchClassificationDataset,
                                        dir_for_saving_prototypes=proto_epoch_dir,
                                        prototype_img_filename_prefix=prototype_img_filename_prefix,
                                        prototype_self_act_filename_prefix=prototype_self_act_filename_prefix,
-                                       prototype_activation_function_in_numpy=prototype_activation_function_in_numpy)
+                                       prototype_activation_function_in_numpy=prototype_activation_function_in_numpy,)
 
     if proto_epoch_dir != None and proto_bound_boxes_filename_prefix != None:
         np.save(os.path.join(proto_epoch_dir,
@@ -177,13 +179,18 @@ def update_prototypes_on_image(dataset: PatchClassificationDataset,
                                prototype_activation_function_in_numpy=None,
                                patch_size=1):
     # segmentation_result = get_image_segmentation(dataset, ppnet, img,
-    # window_size=dataset.window_size,
+    window_size=dataset.window_size,
     # window_shift=512,
     # batch_size=4)
 
     if dataset.convert_targets is not None:
         img_y = dataset.convert_targets(img_y)
     img_y = torch.LongTensor(img_y)
+    # if hasattr(ppnet, 'dinov2') and ppnet.dinov2:
+    #     img_tensor = to_normalized_tensor_dino(window_size[0], img).unsqueeze(0).cuda()
+    #     # img_tensor = to_normalized_tensor_dino(img).unsqueeze(0).cuda()
+    # else:
+    #     img_tensor = to_normalized_tensor(img).unsqueeze(0).cuda()
     img_tensor = to_normalized_tensor(img).unsqueeze(0).cuda()
     conv_features = ppnet.conv_features(img_tensor)
 

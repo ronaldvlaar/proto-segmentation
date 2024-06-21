@@ -6,13 +6,16 @@ construct_PPNet.pretrained = False
 construct_PPNet.prototype_shape = (210, 64, 1, 1)
 construct_PPNet.num_classes = 21
 construct_PPNet.prototype_activation_function = 'log'
-construct_PPNet.add_on_layers_type = 'deeplab_simple'
+construct_PPNet.add_on_layers_type = 'dinov2_simple'
+construct_PPNet.dinov2 = True
 
-deeplabv2_resnet101_features.deeplab_n_features = 64
-deeplabv2_resnet101_features.scales = [0.5, 0.75]
+dinov2_features.deeplab_n_features = 64
+dinov2_features.scales = [0.5, 0.75]
+dinov2_features.size = 322
 
 train.random_seed = 20220227
 train.load_coco = False
+train.dinov2 = True
 train.early_stopping_patience_last_layer = 100
 train.start_checkpoint = ''
 

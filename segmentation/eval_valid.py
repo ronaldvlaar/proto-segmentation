@@ -19,6 +19,7 @@ from segmentation.dataset import resize_label
 from segmentation.constants import CITYSCAPES_CATEGORIES, CITYSCAPES_19_EVAL_CATEGORIES, \
     PASCAL_CATEGORIES, PASCAL_ID_MAPPING, CITYSCAPES_ID_2_LABEL
 from settings import data_path, log
+from model import construct_PPNet
 
 
 def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pascal: bool = False,
@@ -34,6 +35,7 @@ def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pa
         checkpoint_path = os.path.join(model_path, f'checkpoints/{training_phase}_last.pth')
 
     log(f'Loading model from {checkpoint_path}')
+    ppnet = construct_PPNet()
     ppnet = torch.load(checkpoint_path)
     ppnet = ppnet.cuda()
     ppnet.eval()

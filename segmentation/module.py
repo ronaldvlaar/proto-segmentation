@@ -37,7 +37,8 @@ def reset_metrics() -> Dict:
         'n_patches': 0,
         'cross_entropy': 0,
         'kld_loss': 0,
-        'loss': 0
+        'loss': 0,
+        'nll': 0,
     }
 
 
@@ -179,10 +180,6 @@ class PatchClassificationModule(LightningModule):
                 target = target[target_not_void] - 1
                 output = output[target_not_void]
 
-            # cross_entropy = torch.nn.functional.cross_entropy(output, target.long(),)   
-
-            # outputs_list.append(output)
-            # targets_list.append(target.long())
 
             cross_entropy = self.ppnet.gsoftmax.forward(output, target.long()) if hasattr(self.ppnet, 'gsoftmax') and self.ppnet.gsoftmax is not None else \
                 torch.nn.functional.cross_entropy(
@@ -245,7 +242,6 @@ class PatchClassificationModule(LightningModule):
             loss = (self.loss_weight_crs_ent * cross_entropy +
                     self.loss_weight_kld * kld_loss +
                     self.loss_weight_l1 * l1)
-
             mcs_loss += loss / len(mcs_model_outputs)
             mcs_cross_entropy += cross_entropy / len(mcs_model_outputs)
             mcs_kld_loss += kld_loss / len(mcs_model_outputs)
@@ -348,9 +344,8 @@ class PatchClassificationModule(LightningModule):
 
         torch.save(obj=self.ppnet, f=os.path.join(self.checkpoints_dir, f'{stage_key}_last.pth'))
         if val_acc > self.best_acc:
-            log(f'Saving best model, accuracy: ' + str(val_acc))
+            log(f'Best model accuracy: ' + str(val_acc))
             self.best_acc = val_acc
-            torch.save(obj=self.ppnet, f=os.path.join(self.checkpoints_dir, f'{stage_key}_best.pth'))
 
     def _epoch_end(self, split_key: str):
         metrics = self.metrics[split_key]
@@ -406,6 +401,7 @@ class PatchClassificationModule(LightningModule):
                 self.ppnet.features.base.aspp.c3.weight,
                 self.ppnet.features.base.aspp.c3.bias
             ]
+
             optimizer_specs = \
                 [
                     {
@@ -418,44 +414,38 @@ class PatchClassificationModule(LightningModule):
                         'lr': self.warm_optimizer_lr_prototype_vectors
                     }
                 ]
-            # optimizer_specs.append({
-            #             'params': list(self.ppnet.gsoftmax.parameters()),
-            #             'lr': 1e-3,
-            #             'weight_decay': self.warm_optimizer_weight_decay
-            #     }) if hasattr(self.ppnet, 'gsoftmax') and self.ppnet.gsoftmax is not None else None
-        elif self.training_phase == 1:  # joint
-            optimizer_specs = \
-                [
-                    {
-                        "params": get_params(self.ppnet.features, key="1x"),
-                        'lr': self.joint_optimizer_lr_features,
-                        'weight_decay': self.joint_optimizer_weight_decay
-                    },
-                    {
-                        "params": get_params(self.ppnet.features, key="10x"),
-                        'lr': 10 * self.joint_optimizer_lr_features,
-                        'weight_decay': self.joint_optimizer_weight_decay
-                    },
-                    {
-                        "params": get_params(self.ppnet.features, key="20x"),
-                        'lr': 10 * self.joint_optimizer_lr_features,
-                        'weight_decay': self.joint_optimizer_weight_decay
-                    },
-                    {
-                        'params': self.ppnet.add_on_layers.parameters(),
-                        'lr': self.joint_optimizer_lr_add_on_layers,
-                        'weight_decay': self.joint_optimizer_weight_decay
-                    },
-                    {
-                        'params': self.ppnet.prototype_vectors,
-                        'lr': self.joint_optimizer_lr_prototype_vectors
-                    }
-                ]
-            # optimizer_specs.append({
-            #             'params': list(self.ppnet.gsoftmax.parameters()),
-            #             'lr': 1e-3,
-            #             'weight_decay': self.joint_optimizer_weight_decay
-            #     }) if hasattr(self.ppnet, 'gsoftmax') and self.ppnet.gsoftmax is not None else None
+        elif self.training_phase == 1:  # joint                
+                optimizer_specs = \
+                     [ {
+                            "params": get_params(self.ppnet.features, key="10x"),
+                            'lr': 10 * self.joint_optimizer_lr_features,
+                            'weight_decay': self.joint_optimizer_weight_decay
+                        },
+                        {
+                            "params": get_params(self.ppnet.features, key="20x"),
+                            'lr': 10 * self.joint_optimizer_lr_features,
+                            'weight_decay': self.joint_optimizer_weight_decay
+                        },
+                        {
+                            'params': self.ppnet.add_on_layers.parameters(),
+                            'lr': self.joint_optimizer_lr_add_on_layers,
+                            'weight_decay': self.joint_optimizer_weight_decay
+                        },
+                        {
+                            'params': self.ppnet.prototype_vectors,
+                            'lr': self.joint_optimizer_lr_prototype_vectors
+                        }
+                    ]
+                
+                if (not hasattr(self.ppnet, 'dinov2')) or (hasattr(self.ppnet, 'dinov2') and not self.ppnet.dinov2):
+                    # Resnet layers
+                    print('Resnet layer optimization')
+                    optimizer_specs.insert(0, {
+                                "params": get_params(self.ppnet.features, key="1x"),
+                                'lr': self.joint_optimizer_lr_features,
+                                'weight_decay': self.joint_optimizer_weight_decay
+                            })
+                    
         elif self.training_phase == -1: # after joint
             optimizer_specs = [
                 {

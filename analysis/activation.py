@@ -1,5 +1,4 @@
 """
-format
 python -m analysis.activation baseline-imnet-pascal pruned -p
 """
 
@@ -30,6 +29,7 @@ from find_nearest import to_normalized_tensor
 import cv2
 import numpy as np
 import json
+from model import construct_PPNet
 
 to_tensor = transforms.ToTensor()
     
@@ -154,6 +154,7 @@ def run_analysis(model_name: str, training_phase: str, batch_size: int = 2, pasc
         checkpoint_path = os.path.join(model_path, f'checkpoints/{training_phase}_last.pth')
 
     log(f'Loading model from {checkpoint_path}')
+    ppnet = construct_PPNet()
     ppnet = torch.load(checkpoint_path)  # , map_location=torch.device('cpu'))
     ppnet = ppnet.cuda()
 

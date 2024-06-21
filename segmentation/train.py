@@ -48,7 +48,8 @@ def train(
         finetune_steps: int = gin.REQUIRED,
         warmup_batch_size: int = gin.REQUIRED,
         joint_batch_size: int = gin.REQUIRED,
-        load_coco: bool = False
+        load_coco: bool = False,
+        dinov2: bool = False,
 ):
     seed_everything(random_seed)
 
@@ -59,15 +60,10 @@ def train(
     os.makedirs(results_dir, exist_ok=True)
     log(f'Starting experiment in "{results_dir}" from config {config_path}')
 
-    last_checkpoint = os.path.join(results_dir, 'checkpoints', 'nopush_best.pth')
     
     if start_checkpoint:
         log(f'Loading checkpoint from {start_checkpoint}')
         ppnet = torch.load(start_checkpoint)
-        pre_loaded = True
-    elif neptune_experiment is not None and os.path.exists(last_checkpoint):
-        log(f'Loading last model from {last_checkpoint}')
-        ppnet = torch.load(last_checkpoint)
         pre_loaded = True
     else:
         pre_loaded = False
@@ -83,6 +79,10 @@ def train(
 
             assert len(load_result.missing_keys) == 8  # ASPP layer (has different shape)
             assert len(load_result.unexpected_keys) == 2  # final FC for COCO
+        elif dinov2:
+            # dinov2 has no resnet weights
+            pass
+            load_result = 'uitstekend'
         else:
             # load weights from Resnet pretrained on ImageNet
             resnet_state_dict = torchvision.models.resnet101(pretrained=True).state_dict()
@@ -101,16 +101,17 @@ def train(
         log(str(load_result))
 
     logs_dir = os.path.join(results_dir, 'logs')
-    os.makedirs(os.path.join(logs_dir, 'tb'), exist_ok=True)
+    # os.makedirs(os.path.join(logs_dir, 'tb'), exist_ok=True)
     os.makedirs(os.path.join(logs_dir, 'csv'), exist_ok=True)
 
-    tb_logger = TensorBoardLogger(logs_dir, name='tb')
+    # tb_logger = TensorBoardLogger(logs_dir, name='tb')
     csv_logger = CSVLogger(logs_dir, name='csv')
-    loggers = [tb_logger, csv_logger]
+    # loggers = [tb_logger, csv_logger]
+    loggers = [csv_logger]
 
     json_gin_config = get_operative_config_json()
 
-    tb_logger.log_hyperparams(json_gin_config)
+    # tb_logger.log_hyperparams(json_gin_config)
     csv_logger.log_hyperparams(json_gin_config)
 
     if not pruned:
@@ -138,6 +139,7 @@ def train(
 
         shutil.copy(f'segmentation/configs/{config_path}.gin', os.path.join(results_dir, 'config.gin'))
 
+        # warmup_steps=0
         if warmup_steps > 0:
             data_module = PatchClassificationDataModule(batch_size=warmup_batch_size)
             module = PatchClassificationModule(
@@ -159,6 +161,14 @@ def train(
             ppnet = torch.load(last_checkpoint)
             ppnet = ppnet.cuda()
 
+        # TEMP start from joint
+        # last_checkpoint = os.path.join(results_dir, 'checkpoints/nopush_last.pth')
+        # if os.path.exists(last_checkpoint):
+        #     log(f'Continue from joint : {last_checkpoint}')
+        #     ppnet = torch.load(last_checkpoint)
+        #     ppnet = ppnet.cuda()
+        # TEMP
+
         data_module = PatchClassificationDataModule(batch_size=joint_batch_size)
         module = PatchClassificationModule(
             model_dir=results_dir,
@@ -173,8 +183,26 @@ def train(
         # Update current epoch for gsoftmax
         current_epoch = trainer.current_epoch
 
+        # #TEMP begin (start from nupush_last)
+        # trainer = Trainer(logger=loggers, checkpoint_callback=None, enable_progress_bar=False,
+        #                   min_steps=1, max_steps=joint_steps)
+        # last_checkpoint = os.path.join(results_dir, 'checkpoints/nopush_last.pth')
+        # if os.path.exists(last_checkpoint):
+        #     log(f'Loading model after nopush from {last_checkpoint}')
+        #     ppnet = torch.load(last_checkpoint)
+        #     ppnet = ppnet.cuda()
+
+        # data_module = PatchClassificationDataModule(batch_size=joint_batch_size)
+        # module = PatchClassificationModule(
+        #     model_dir=results_dir,
+        #     ppnet=ppnet,
+        #     training_phase=1,
+        #     max_steps=joint_steps
+        # )
+        # #TEMP end
+
         if hasattr(ppnet, 'gsoftmax') and ppnet.gsoftmax is not None:
-            data_module = PatchClassificationDataModule(batch_size=2)
+            data_module = PatchClassificationDataModule(batch_size=joint_batch_size)
             module = PatchClassificationModule(
                 model_dir=results_dir,
                 ppnet=ppnet,
@@ -213,7 +241,7 @@ def train(
         )
 
         torch.save(obj=ppnet, f=os.path.join(results_dir, f'checkpoints/push_last.pth'))
-        torch.save(obj=ppnet, f=os.path.join(results_dir, f'checkpoints/push_best.pth'))
+        # torch.save(obj=ppnet, f=os.path.join(results_dir, f'checkpoints/push_best.pth'))
 
         ppnet = torch.load(os.path.join(results_dir, f'checkpoints/push_last.pth'))
         ppnet = ppnet.cuda()

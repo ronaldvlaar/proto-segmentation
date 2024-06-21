@@ -11,6 +11,7 @@ from preprocess import preprocess
 from segmentation.data_module import PatchClassificationDataModule
 from log import create_logger
 from segmentation.dataset import PatchClassificationDataset
+from model import construct_PPNet
 
 
 def run_pruning(config_name: str, experiment_name: str, k: int = 6, prune_threshold: int = 3):
@@ -25,6 +26,7 @@ def run_pruning(config_name: str, experiment_name: str, k: int = 6, prune_thresh
 
     log, logclose = create_logger(log_filename=os.path.join(output_dir, 'prune.log'))
 
+    ppnet = construct_PPNet()
     ppnet = torch.load(model_path)
     ppnet = ppnet.cuda()
     ppnet_multi = torch.nn.DataParallel(ppnet)

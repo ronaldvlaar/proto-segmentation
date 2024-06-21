@@ -55,7 +55,7 @@ def deeplabv2_resnet101_features(pretrained=False, deeplab_n_features: int = gin
     return MSC(
         base=DeepLabV2(
             n_classes=deeplab_n_features, n_blocks=[3, 4, 23, 3], atrous_rates=[6, 12, 18, 24]
-        ),
+        ).to('cuda'),
         scales=scales,
     )
 
@@ -64,7 +64,15 @@ if __name__ == '__main__':
     features = deeplabv2_resnet101_features(pretrained=True, deeplab_n_features=64, scales=[0.5, 0.75])
 
     import torch
-    sample_input = torch.randn(2, 3, 321, 321)
+    import time
+    sample_input = torch.randn(2, 3, 321, 321).to('cuda')
     
-    for e in features(sample_input):
-        print(e.shape)
+    features(sample_input)
+
+    start = time.time()
+    for _ in range(10):
+        output = features(sample_input)
+    end = time.time()
+    
+    forward_pass_time = end - start
+    print(f"Forward pass time: {forward_pass_time:.6f} seconds")

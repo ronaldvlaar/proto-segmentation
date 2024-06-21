@@ -23,6 +23,18 @@ to_normalized_tensor = transforms.Compose([
     transforms.Normalize(CITYSCAPES_MEAN, CITYSCAPES_STD)
 ])
 
+# to_normalized_tensor_dino = \
+#     transforms.Compose([
+#     transforms.Resize((322,322)),
+#     transforms.ToTensor(),
+#     transforms.Normalize(CITYSCAPES_MEAN, CITYSCAPES_STD)])
+
+def to_normalized_tensor_dino(window_size, img):
+    return transforms.Compose([
+    transforms.Resize(window_size),
+    transforms.ToTensor(),
+    transforms.Normalize(CITYSCAPES_MEAN, CITYSCAPES_STD)])(img)
+
 
 def imsave_with_bbox(fname, img_rgb, bbox_height_start, bbox_height_end,
                      bbox_width_start, bbox_width_end, color=(0, 255, 255)):
