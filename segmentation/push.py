@@ -16,6 +16,7 @@ from segmentation.constants import PASCAL_ID_MAPPING, PASCAL_CATEGORIES, CITYSCA
     CITYSCAPES_CATEGORIES
 
 from segmentation.dataset import PatchClassificationDataset
+from segmentation.dataset import resize_label
 
 to_tensor = transforms.ToTensor()
 
@@ -185,6 +186,9 @@ def update_prototypes_on_image(dataset: PatchClassificationDataset,
 
     if dataset.convert_targets is not None:
         img_y = dataset.convert_targets(img_y)
+        if dataset.only_19_from_cityscapes:
+            # print ('check')
+            img_y=resize_label(img_y, size=img.size).cpu().detach().numpy()
     img_y = torch.LongTensor(img_y)
     # if hasattr(ppnet, 'dinov2') and ppnet.dinov2:
     #     img_tensor = to_normalized_tensor_dino(window_size[0], img).unsqueeze(0).cuda()
@@ -192,7 +196,9 @@ def update_prototypes_on_image(dataset: PatchClassificationDataset,
     # else:
     #     img_tensor = to_normalized_tensor(img).unsqueeze(0).cuda()
     img_tensor = to_normalized_tensor(img).unsqueeze(0).cuda()
+    # print(img.size, img_tensor.shape, img_y.shape)
     conv_features = ppnet.conv_features(img_tensor)
+    # print('ready')
 
     # save RAM
     del img_tensor

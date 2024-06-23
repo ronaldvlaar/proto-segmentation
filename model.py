@@ -134,15 +134,15 @@ class PPNet(nn.Module):
             self.add_on_layers = nn.Sequential(*add_on_layers)
         elif add_on_layers_type == 'deeplab_simple':
             log('deeplab_simple add_on_layers')
-            # self.add_on_layers = nn.Sequential(
-            #     nn.Sigmoid()
-            # )
+            self.add_on_layers = nn.Sequential(
+                nn.Sigmoid()
+            )
 
             # Relu vs sigmoid
             # https://wandb.ai/ayush-thakur/dl-question-bank/reports/ReLU-vs-Sigmoid-Function-in-Deep-Neural-Networks--VmlldzoyMDk0MzI
-            self.add_on_layers = nn.Sequential(
-                nn.ReLU()
-            )
+            # self.add_on_layers = nn.Sequential(
+            #     nn.ReLU()
+            # )
         elif add_on_layers_type == 'dinov2_simple':
             self.add_on_layers = nn.Sequential(
                 nn.ReLU()
@@ -162,7 +162,6 @@ class PPNet(nn.Module):
         self.ones = nn.Parameter(torch.ones(self.prototype_shape),
                                  requires_grad=False)
 
-        self.normalize_layer = nn.BatchNorm1d(self.num_classes)
         self.last_layer = nn.Linear(self.num_prototypes, self.num_classes,
                                     bias=False)  # do not use bias
 
@@ -181,7 +180,7 @@ class PPNet(nn.Module):
     def num_classes(self):
         return self.prototype_class_identity.shape[1]
 
-    def run_last_layer(self, prototype_activations, inference_activation=True, inference_crf=True):
+    def run_last_layer(self, prototype_activations, inference_activation=True):
         """
         In case the model has a gsoftmax layer, the raw logits can be obtained by setting
         inference_activation to False and when the model is in evaluation mode.
@@ -192,9 +191,10 @@ class PPNet(nn.Module):
         if inference_activation:
             # If true and in evaluation (inference) mode, the gsoftmax function is applied to the logits.
             # based on the learned feature distributions per class.
-            if not torch.is_grad_enabled() and self.gsoftmax is not None:
+            if not torch.is_grad_enabled() and hasattr(self, 'gsoftmax') and self.gsoftmax is not None:
                 x = self.gsoftmax.predict(x)
         
+        # print('shapex', x.shape, F.softmax(x, dim=1).shape, F.softmax(x, dim=1)[0])
         return x
 
     def conv_features(self, x):

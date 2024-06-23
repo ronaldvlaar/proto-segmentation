@@ -36,7 +36,8 @@ def run(model_name: str, training_phase: str, batch_size: int = 2, pascal: bool 
 
     proto_m = proto_m[um]
     proto_m = proto_m[km]
-
+    
+    print('protos after projection', len(um))
     print('protos after pruning', len(proto_m))
 
 

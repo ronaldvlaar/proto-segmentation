@@ -58,7 +58,7 @@ class DinoV2WithASPP(nn.Module):
 def get_scales(size, scales=[0.5, 0.75], patch=14):
     """
     Rescales scales such the scaled samples become a multiple of the dinov2 patch_size.
-    This is a requirement of the dinov2 model.
+    This is a requirement of the dinov2 model. The size parameter holds the size of the training inputs.
     """
     new_scales = []
     for scale in scales:
@@ -91,7 +91,7 @@ def dinov2_features(pretrained=False, deeplab_n_features: int = gin.REQUIRED,
 if __name__ == '__main__':
     features = dinov2_features(pretrained=True, deeplab_n_features=64, scales=[0.5, 0.75], size=322)
     
-    sample_input = torch.randn(2, 3, 321, 321).to('cuda')  # Example input tensor with shape [batch_size, channels, height, width]
+    sample_input = torch.randn(2, 3, 321, 321).to('cuda')
     
     print(features.base.crop(sample_input).shape)
     import time

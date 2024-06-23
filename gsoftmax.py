@@ -5,6 +5,7 @@ G-softmax from https://github.com/luoyan407/gsoftmax
 import torch
 from torch import nn
 from torch.distributions.normal import Normal
+import torch.nn.functional as F
 import numpy as np
 
 
@@ -55,9 +56,8 @@ class GaussianSoftMaxCriterion(nn.Module):
         normal_dist = Normal(self.mu.to(input.device), torch.clamp(self.sigma.to(input.device), min=1e-6))
         prob = normal_dist.cdf(input)
         prob = prob * self.scale + input
-        exp_sum = torch.exp(prob).sum(dim=1, keepdim=True)
-
-        output = torch.exp(prob) / exp_sum
+        
+        output = F.softmax(prob, dim=1)
 
         return output
     

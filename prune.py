@@ -33,6 +33,9 @@ def prune_prototypes(dataset,
     original_num_prototypes = prototype_network_parallel.module.num_prototypes
     
     prototypes_to_prune = []
+    # added to make sure at least one prototype per class will be kept
+    prunes_per_class = {int(j%prototype_network_parallel.module.num_prototypes_per_class) : [] for j in range(prototype_network_parallel.module.num_prototypes)}
+
     for j in range(prototype_network_parallel.module.num_prototypes):
         class_j = torch.argmax(prototype_network_parallel.module.prototype_class_identity[j]).item()
 
@@ -40,6 +43,14 @@ def prune_prototypes(dataset,
         # if no such element is in Counter, it will return 0
         if nearest_train_patch_class_counts_j[class_j] < prune_threshold:
             prototypes_to_prune.append(j)
+            prunes_per_class[int(j%prototype_network_parallel.module.num_prototypes_per_class)].append((j, nearest_train_patch_class_counts_j[class_j]))
+
+    for k in prunes_per_class.keys():
+        prunes_per_class[k] = sorted(prunes_per_class[k], key=lambda x: x[1], reverse=True)
+        if len(prunes_per_class) == prototype_network_parallel.module.num_prototypes_per_class:
+            # Keep one prototype per class if for all prototypes of the class no more than prune_threshold of k neareast patches were of the true class
+            prototypes_to_prune.remove(prunes_per_class[k][0][0])
+
 
     log('k = {}, prune_threshold = {}'.format(k, prune_threshold))
     log('{} prototypes will be pruned'.format(len(prototypes_to_prune)))

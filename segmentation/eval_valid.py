@@ -21,10 +21,35 @@ from segmentation.constants import CITYSCAPES_CATEGORIES, CITYSCAPES_19_EVAL_CAT
 from settings import data_path, log
 from model import construct_PPNet
 
+from deeplab_pytorch.libs.utils import DenseCRF
+
+# CONFIG = {
+#     'ITER_MAX' : 10,
+#     'POS_W' : 3,
+#     'POS_XY_STD' : 1,
+#     'BI_W' : 4,
+#     'BI_XY_STD' : 67,
+#     'BI_RGB_STD' : 3
+# }
+
+def setup_postprocessor(iter_max=10, pos_w=1, pos_xy_std=1, bi_w=4, bi_xy_std=61, bi_rgb_std=8):
+# def setup_postprocessor(iter_max=10, pos_w=3, pos_xy_std=1, bi_w=4, bi_xy_std=61, bi_rgb_std=3):
+    # CRF post-processor from deeplab_pytorch
+    postprocessor = DenseCRF(
+        iter_max=iter_max,
+        pos_xy_std=pos_xy_std,
+        pos_w=pos_w,
+        bi_xy_std=bi_xy_std,
+        bi_rgb_std=bi_rgb_std,
+        bi_w=bi_w,
+    )
+
+    return postprocessor
 
 def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pascal: bool = False,
-                   margin: int = 0):
+                   margin: int = 0, crf : bool = False):
     print(model_name, training_phase)
+    post_processor = setup_postprocessor()
     model_path = os.path.join(os.environ['RESULTS_DIR'], model_name)
     config_path = os.path.join(model_path, 'config.gin')
     gin.parse_config_file(config_path)
@@ -39,6 +64,8 @@ def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pa
     ppnet = torch.load(checkpoint_path)
     ppnet = ppnet.cuda()
     ppnet.eval()
+
+    print('gsoftmax', hasattr(ppnet, 'gsotmax') and ppnet.gsoftmax is not None)
 
     NORM_MEAN = [0.485, 0.456, 0.406]
     NORM_STD = [0.229, 0.224, 0.225]
@@ -78,7 +105,7 @@ def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pa
     proto_ident = ppnet.prototype_class_identity.cpu().detach().numpy()
     mean_top_k = np.zeros(proto_ident.shape[0], dtype=float)
 
-    RESULTS_DIR = os.path.join(model_path, f'evaluation/{training_phase}')
+    RESULTS_DIR = os.path.join(model_path, f'evaluation/{training_phase}') if not crf else os.path.join(model_path, f'evaluation/{training_phase}_crf')
     os.makedirs(RESULTS_DIR, exist_ok=True)
 
     CLS_CONVERT = np.vectorize(ID_MAPPING.get)
@@ -154,6 +181,7 @@ def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pa
         for batch_img_files in tqdm(batched_img_files, desc='evaluating'):
             img_tensors = []
             anns = []
+            ims = []
 
             for img_file in batch_img_files:
                 img = np.load(os.path.join(img_dir, img_file)).astype(np.uint8)
@@ -173,25 +201,35 @@ def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pa
                     img_tensor = torch.nn.functional.interpolate(img_tensor.unsqueeze(0),
                                                                  size=img_shape, mode='bilinear', align_corners=False)[0]
                 anns.append(ann)
+                ims.append(img)
                 img_tensors.append(img_tensor)
 
             img_tensors = torch.stack(img_tensors, dim=0).cuda()
-            batch_logits, batch_distances = ppnet.forward(img_tensors)
+            batch_logits, batch_distances = ppnet.forward(img_tensors, inference_activation=True)
 
             batch_logits = batch_logits.permute(0, 3, 1, 2)
 
-
             for sample_i in range(len(batch_img_files)):
                 ann = anns[sample_i]
+                raw_im = ims[sample_i]
+                # print(raw_im, 'raw im', raw_im.shape)
                 logits = torch.unsqueeze(batch_logits[sample_i], 0)
                 distances = torch.unsqueeze(batch_distances[sample_i], 0)
-
                 logits = F.interpolate(logits, size=ann.shape, mode='bilinear', align_corners=False)[0]
+                
+                if crf:
+                    # print(not hasattr(ppnet, 'gsoftmax') or ppnet.gsoftmax is None )
+                    # print(logits.shape)
+                    probs = F.softmax(logits, dim=0) if not hasattr(ppnet, 'gsoftmax') or ppnet.gsoftmax is None else logits
+                    # print('forward 1', raw_im.shape, probs.shape)
+                    probs = probs.cpu().numpy()
+                    probs = post_processor(raw_im, probs)
+               
                 distances = F.interpolate(distances, size=ann.shape, mode='bilinear', align_corners=False)[0]
 
                 nearest_proto = torch.argmin(distances, dim=0).cpu().detach().numpy()
                 distances = distances.cpu().detach().numpy()
-                pred = torch.argmax(logits, dim=0).cpu().detach().numpy()
+                pred = torch.argmax(logits, dim=0).cpu().detach().numpy() if not crf else np.argmax(probs, axis=0)
 
                 correct_pixels += np.sum(((pred + 1) == ann) & (ann != 0))
                 #  (2,1024,2048) (2,2048,1024)
@@ -362,11 +400,12 @@ def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pa
             img_tensor = transform(img).unsqueeze(0).cuda()
             img_tensor = torch.nn.functional.interpolate(img_tensor, size=img_shape,
                                                          mode='bilinear', align_corners=False)
-            logits, distances = ppnet.forward(img_tensor)
+            logits, distances = ppnet.forward(img_tensor, inference_activation=True)
 
             img = torch.tensor(img).cuda().permute(2, 0, 1).unsqueeze(0).float()
             img = torch.nn.functional.interpolate(img, size=img_shape,
                                                   mode='bilinear', align_corners=False)
+            raw_img = img.squeeze(0).permute(1, 2, 0).cpu().detach().numpy().astype(np.uint8)
             img = img.cpu().detach().numpy()[0].astype(int)
             img = img.transpose(1, 2, 0)
 
@@ -375,13 +414,20 @@ def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pa
             logits = F.interpolate(logits, size=img_shape, mode='bilinear', align_corners=False)[0]
             distances = F.interpolate(distances, size=img_shape, mode='bilinear', align_corners=False)[0]
 
+            if crf:
+                print('logits shape 2nd forward', logits.shape)
+                probs = F.softmax(logits, dim=0) if not hasattr(ppnet, 'gsoftmax') or ppnet.gsoftmax is None else logits
+                probs = probs.cpu().numpy()
+                # print('forward2', img.shape, probs.shape, raw_img.shape)
+                probs = post_processor(raw_img, probs)
+
             # (H, W, C)
             distances = distances.cpu().detach().numpy()
             logits = logits.cpu().detach().numpy()
 
         # nearest_proto = np.argmin(distances_interp, axis=0).T % 10
         nearest_proto = np.argmin(distances, axis=0) % 10
-        pred = np.argmax(logits, axis=0)
+        pred = np.argmax(logits, axis=0) if not crf else np.argmax(probs, axis=0)
 
         # save some RAM
         del distances, logits, img_tensor
