@@ -124,6 +124,8 @@ def find_k_nearest_patches_to_prototypes(dataset,
         proto_dist_ = np.copy(proto_dist_torch.detach().cpu().numpy())
 
         search_y = np.load(os.path.join(dataset.annotations_dir, img_id + '.npy'))
+        if dataset.only_19_from_cityscapes:
+            search_y=resize_label(search_y, size=img.size).cpu().detach().numpy()
         search_y = dataset.convert_targets(np.expand_dims(search_y, 0))
         # -1 because we ignore void class
         search_y = search_y - 1

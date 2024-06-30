@@ -23,6 +23,7 @@ from settings import data_path, log
 from helpfunc import get_cls2name, log_json
 import pandas as pd
 from gsoftmax import compactness, separability
+from model import construct_PPNet
 
 
 def save_pkl(cls_logits, path, downsample=1000000):
@@ -53,6 +54,7 @@ def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pa
         checkpoint_path = os.path.join(model_path, f'checkpoints/{training_phase}_last.pth')
 
     log(f'Loading model from {checkpoint_path}')
+    ppnet = construct_PPNet()
     ppnet = torch.load(checkpoint_path)
     ppnet = ppnet.cuda()
     ppnet.eval()
@@ -139,7 +141,7 @@ def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pa
                             continue
                         nonclass_logits.extend(class_logits[cls_o][gt])
                     total_logits = len(nonclass_logits)
-                    halving = int(len(nonclass_logits)//4)
+                    halving = int(len(nonclass_logits)//16)
                     min_sample = 5000
                     downsample =  halving if halving > min_sample else min_sample if min_sample < total_logits else total_logits
                     indices = np.random.choice(total_logits, size=downsample, replace=False)

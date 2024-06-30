@@ -85,7 +85,7 @@ def make_act_map_plots(img: Image,
         print('class', classname, ' protos', len(protosidxs), protosidxs, proto_m[protosidxs])
 
         fig, axs = plt.subplots(3, len(protosidxs), figsize=(5*len(protosidxs), 15))
-        fig.suptitle(classname) 
+        # fig.suptitle(classname) 
         for col_idx, j in enumerate(protosidxs):
             # TODO 
             # - Include rf calculated from protos
@@ -119,6 +119,7 @@ def make_act_map_plots(img: Image,
             proto_rf = protos[j].cpu().reshape((8,8))
             # Invert resnet transform *std+mean
             axs[0][col_idx].imshow(overlayed_original_img_j)
+            axs[0][col_idx].axis('off')
             # axs[1][col_idx].imshow(proto_rf)
             # axs[1][col_idx].set_title('original_proto_idx'+str(proto_m[j]))\
             
@@ -126,13 +127,15 @@ def make_act_map_plots(img: Image,
             with open(proto_95_path, 'rb') as f:
                 proto_95 = Image.open(f).convert('RGB')
             axs[1][col_idx].imshow(proto_95)
-            axs[1][col_idx].set_title(f'Prototype {proto_m[j]} - 95% activation')
+            # axs[1][col_idx].set_title(f'Prototype {proto_m[j]} - 95% activation')
+            axs[1][col_idx].axis('off')
 
             original_with_bb_path = os.path.join(model_path, 'prototypes', classname, f'prototype-img_{proto_m[j]}-original_with_box.png')
             with open(original_with_bb_path, 'rb') as f:
                 original_with_bb = Image.open(f).convert('RGB')
             axs[2][col_idx].imshow(original_with_bb)
-            axs[2][col_idx].set_title(f'Protype {proto_m[j]} - patch origin')
+            axs[2][col_idx].axis('off')
+            # axs[2][col_idx].set_title(f'Protype {proto_m[j]} - patch origin')
 
 
         plt.tight_layout()
@@ -160,11 +163,16 @@ def run_analysis(model_name: str, training_phase: str, batch_size: int = 2, pasc
 
     img_dir = os.path.join(data_path, f'img_with_margin_{margin}/val')
 
-    all_img_files = [p for p in os.listdir(img_dir) if p.endswith('.png')][:1]
+    if pascal:
 
-    all_img_files.append('2009_003343.png')
-    all_img_files.append('2009_004859.png')
-    all_img_files.append('2009_000354.png')
+        all_img_files = [p for p in os.listdir(img_dir) if p.endswith('.png')][:1]
+
+        all_img_files.append('2009_003343.png')
+        all_img_files.append('2009_004859.png')
+        all_img_files.append('2009_000354.png')
+    else:
+        all_img_files = ['munster_000000_000019.npy']
+
 
     images = [os.path.join(img_dir, im) for im in all_img_files]
 
@@ -213,8 +221,11 @@ def run_analysis(model_name: str, training_phase: str, batch_size: int = 2, pasc
         cls2protos[cls].append(proto_num)
 
     for img_path in images:
-        with open(img_path, 'rb') as f:
-            img = Image.open(f).convert('RGB')
+        if pascal:
+            with open(img_path, 'rb') as f:
+                img = Image.open(f).convert('RGB')
+        else:
+            img = Image.fromarray(np.load(img_path)).convert('RGB')
 
         # remove margins which were used for training
         img = img.crop((margin, margin, img.width - margin, img.height - margin))

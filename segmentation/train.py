@@ -207,11 +207,11 @@ def train(
                 model_dir=results_dir,
                 ppnet=ppnet,
                 training_phase=-1,
-                max_steps=warmup_steps
+                max_steps=joint_steps
             )
 
             trainer = Trainer(logger=loggers, checkpoint_callback=None, enable_progress_bar=False,
-                            min_steps=1, max_steps=warmup_steps)
+                            min_steps=1, max_steps=joint_steps)
             trainer.fit_loop.current_epoch = current_epoch + 1
             trainer.fit(model=module, datamodule=data_module)
 

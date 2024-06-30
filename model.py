@@ -134,18 +134,30 @@ class PPNet(nn.Module):
             self.add_on_layers = nn.Sequential(*add_on_layers)
         elif add_on_layers_type == 'deeplab_simple':
             log('deeplab_simple add_on_layers')
+            # self.add_on_layers = nn.Sequential(
+            #     nn.Sigmoid()
+            # )
+
+            # Relu vs sigmoid
+            # https://wandb.ai/ayush-thakur/dl-question-bank/reports/ReLU-vs-Sigmoid-Function-in-Deep-Neural-Networks--VmlldzoyMDk0MzI
+            self.add_on_layers = nn.Sequential(
+                nn.ReLU()
+            )
+
+        elif add_on_layers_type == 'deeplab_simple_baseline':
+            log('deeplab_simple_baseline add_on_layers')
             self.add_on_layers = nn.Sequential(
                 nn.Sigmoid()
             )
 
-            # Relu vs sigmoid
-            # https://wandb.ai/ayush-thakur/dl-question-bank/reports/ReLU-vs-Sigmoid-Function-in-Deep-Neural-Networks--VmlldzoyMDk0MzI
-            # self.add_on_layers = nn.Sequential(
-            #     nn.ReLU()
-            # )
         elif add_on_layers_type == 'dinov2_simple':
             self.add_on_layers = nn.Sequential(
                 nn.ReLU()
+            )
+        
+        elif add_on_layers_type == 'leaky':
+            self.add_on_layers = nn.Sequential(
+                nn.LeakyReLU(0.01)
             )
 
         else:

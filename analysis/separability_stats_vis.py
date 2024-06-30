@@ -13,14 +13,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-m1 = 'baseline-imnet-pascal'
-m2 = 'baseline-imnet-pascal-relu'
-m3 = 'gsoftmax-imnet-pascal'
+m1 = 'baseline-imnet-cityscapes'
+m2 = 'baseline-imnet-cityscapes-leakyReLU'
+m3 = 'gsoft-imnet-cityscapes-leakyReLU-full'
+m4 = 'dino-imnet-cityscapes-leakyReLU'
 
-p = True
+p = False
 pascal = 'Pascal' if p else 'Cityscapes' 
 
-resdir = './analysis/img/'+m1+'--'+m2+'--'+m3
+resdir = './analysis/img/'+m1+'--'+m2+'--'+m3+'--'+m4
 os.makedirs(resdir, exist_ok=True)
 
 
@@ -36,8 +37,9 @@ def load_model_data(m, src='/emperical/pruned'):
     return m_path, m_logits, m_nonlogits, m_dict
 
 m1_path, m1_logits, m1_nonlogits, m1_dict = load_model_data(m1, src='/emperical/pruned')
-m2_path, m2_logits, m2_nonlogits, m2_dict = load_model_data(m2, src='/emperical/pruned/temp')
-m3_path, m3_logits, m3_nonlogits, m3_dict = load_model_data(m3, src='/emperical/pruned/temp')
+m2_path, m2_logits, m2_nonlogits, m2_dict = load_model_data(m2, src='/emperical/pruned')
+m3_path, m3_logits, m3_nonlogits, m3_dict = load_model_data(m3, src='/emperical/pruned')
+m4_path, m4_logits, m4_nonlogits, m4_dict = load_model_data(m4, src='/emperical/pruned')
 
 # print(np.mean(m1_dict['mu']), np.mean(m2_dict['mu']))
 # print(np.mean(m1_dict['mu'])-np.mean(m1_dict['nonclass_mu']))
@@ -49,16 +51,19 @@ def barplot(m1_dict, m2_dict, m3_dict, keys=['avg_compactness', 'avg_class_seper
     m1_stats = [m1_dict[k] for k in keys]
     m2_stats = [m2_dict[k] for k in keys]
     m3_stats = [m3_dict[k] for k in keys]
+    m4_stats = [m4_dict[k] for k in keys]
+
+    print(m4_stats)
 
     x = np.arange(len(categories)) 
-    width = 0.35
 
-    width=0.22
+    width=0.20
 
     fig, ax = plt.subplots()
-    bars1 = ax.bar(x - width, m1_stats, width, label='sigmoid', color='yellow')
-    bars2 = ax.bar(x, m2_stats, width, label='relu', color='orange')
-    bars3 = ax.bar(x + width, m3_stats, width, label='G-softmax', color='red')
+    bars1 = ax.bar(x-1.5*width, m1_stats, width, label='Sigmoid', color='green')
+    bars2 = ax.bar(x-0.5*width, m2_stats, width, label='leakyReLU', color='yellow')
+    bars3 = ax.bar(x+0.5*width, m3_stats, width, label='G-softmax', color='orange')
+    bars4 = ax.bar(x+1.5*width, m4_stats, width, label='DINOv2', color='red')
 
     ax.set_ylabel('value')
     ax.set_title('ProtoSeg '+pascal + ' - feature compactness and separability')
@@ -78,8 +83,9 @@ def barplot(m1_dict, m2_dict, m3_dict, keys=['avg_compactness', 'avg_class_seper
     autolabel(bars1)
     autolabel(bars2)
     autolabel(bars3)
+    autolabel(bars4)
 
     fig.tight_layout()
-    plt.savefig(resdir+'/compactness_and_separability.png')
+    plt.savefig(resdir+'/compactness_and_separability.png', dpi=300)
 
 barplot(m1_dict, m2_dict, m3_dict)

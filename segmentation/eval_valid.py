@@ -23,18 +23,16 @@ from model import construct_PPNet
 
 from deeplab_pytorch.libs.utils import DenseCRF
 
-# CONFIG = {
-#     'ITER_MAX' : 10,
-#     'POS_W' : 3,
-#     'POS_XY_STD' : 1,
-#     'BI_W' : 4,
-#     'BI_XY_STD' : 67,
-#     'BI_RGB_STD' : 3
-# }
 
-def setup_postprocessor(iter_max=10, pos_w=1, pos_xy_std=1, bi_w=4, bi_xy_std=61, bi_rgb_std=8):
-# def setup_postprocessor(iter_max=10, pos_w=3, pos_xy_std=1, bi_w=4, bi_xy_std=61, bi_rgb_std=3):
-    # CRF post-processor from deeplab_pytorch
+def setup_postprocessor(iter_max=10, pos_w=1, pos_xy_std=1, bi_w=4, bi_xy_std=20, bi_rgb_std=4, pascal=False):
+    if pascal:
+        iter_max=10
+        pos_w=1
+        pos_xy_std=1
+        bi_w=4
+        bi_xy_std=61
+        bi_rgb_std=8
+
     postprocessor = DenseCRF(
         iter_max=iter_max,
         pos_xy_std=pos_xy_std,
@@ -49,7 +47,7 @@ def setup_postprocessor(iter_max=10, pos_w=1, pos_xy_std=1, bi_w=4, bi_xy_std=61
 def run_evaluation(model_name: str, training_phase: str, batch_size: int = 2, pascal: bool = False,
                    margin: int = 0, crf : bool = False):
     print(model_name, training_phase)
-    post_processor = setup_postprocessor()
+    post_processor = setup_postprocessor(pascal=pascal)
     model_path = os.path.join(os.environ['RESULTS_DIR'], model_name)
     config_path = os.path.join(model_path, 'config.gin')
     gin.parse_config_file(config_path)

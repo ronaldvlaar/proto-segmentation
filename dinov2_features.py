@@ -90,8 +90,7 @@ def dinov2_features(pretrained=False, deeplab_n_features: int = gin.REQUIRED,
 
 if __name__ == '__main__':
     features = dinov2_features(pretrained=True, deeplab_n_features=64, scales=[0.5, 0.75], size=322)
-    
-    sample_input = torch.randn(2, 3, 321, 321).to('cuda')
+    sample_input = torch.randn(2, 3, 518, 518).to('cuda')
     
     print(features.base.crop(sample_input).shape)
     import time

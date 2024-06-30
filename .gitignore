@@ -5,6 +5,8 @@
 /tb_csv
 /csv
 
+/segmentation/gs.py
+
 /wandb
 
 nohup.out

@@ -45,11 +45,11 @@ def prune_prototypes(dataset,
             prototypes_to_prune.append(j)
             prunes_per_class[int(j%prototype_network_parallel.module.num_prototypes_per_class)].append((j, nearest_train_patch_class_counts_j[class_j]))
 
-    for k in prunes_per_class.keys():
-        prunes_per_class[k] = sorted(prunes_per_class[k], key=lambda x: x[1], reverse=True)
-        if len(prunes_per_class) == prototype_network_parallel.module.num_prototypes_per_class:
+    for key in prunes_per_class.keys():
+        prunes_per_class[key] = sorted(prunes_per_class[key], key=lambda x: x[1], reverse=True)
+        if len(prunes_per_class[key]) == prototype_network_parallel.module.num_prototypes_per_class:
             # Keep one prototype per class if for all prototypes of the class no more than prune_threshold of k neareast patches were of the true class
-            prototypes_to_prune.remove(prunes_per_class[k][0][0])
+            prototypes_to_prune.remove(prunes_per_class[key][0][0])
 
 
     log('k = {}, prune_threshold = {}'.format(k, prune_threshold))

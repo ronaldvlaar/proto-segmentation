@@ -28,9 +28,6 @@ from deeplab_features import torchvision_resnet_weight_key_to_deeplab2
 
 Trainer = gin.external_configurable(Trainer)
 
-import mlflow
-mlflow.set_tracking_uri("/home/rvlaar/.mlflow")
-
 @gin.configurable(denylist=['config_path', 'experiment_name', 'neptune_experiment', 'pruned'])
 def train(
         config_path: str,
